@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-[#f6fbfa] text-[#23272f] m-0 p-0 min-h-screen;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+}
+
+.container {
+  @apply max-w-[1400px] min-h-[600px] h-[90vh] my-[5vh] mx-auto bg-transparent shadow-none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  @apply bg-[#f6fbfa];
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-200 rounded-lg;
+} 

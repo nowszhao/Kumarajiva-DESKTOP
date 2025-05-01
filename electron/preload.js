@@ -1,0 +1,45 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+// All of the Node.js APIs are available in the preload process.
+// It has the same sandbox as a Chrome extension.
+window.addEventListener('DOMContentLoaded', () => {
+  const replaceText = (selector, text) => {
+    const element = document.getElementById(selector);
+    if (element) element.innerText = text;
+  };
+
+  for (const type of ['chrome', 'node', 'electron']) {
+    replaceText(`${type}-version`, process.versions[type]);
+  }
+});
+
+// 暴露 API 到渲染进程
+contextBridge.exposeInMainWorld('electronAPI', {
+  // 通用 API 请求接口
+  apiRequest: (method, url, data, headers) => 
+    ipcRenderer.invoke('api-request', { method, url, data, headers }),
+  
+  // 阿里云盘 API 接口
+  getQrcode: () => ipcRenderer.invoke('get-qrcode'),
+  
+  checkQrcodeStatus: (sid) => 
+    ipcRenderer.invoke('check-qrcode-status', { sid }),
+  
+  getAccessToken: (authCode) => 
+    ipcRenderer.invoke('get-access-token', { authCode }),
+  
+  getDriveInfo: (accessToken) => 
+    ipcRenderer.invoke('get-drive-info', { accessToken }),
+  
+  loadFileList: (accessToken, driveId, folderId) => 
+    ipcRenderer.invoke('load-file-list', { accessToken, driveId, folderId }),
+  
+  searchFiles: (accessToken, driveId, query) => 
+    ipcRenderer.invoke('search-files', { accessToken, driveId, query }),
+  
+  getVideoUrl: (accessToken, driveId, fileId) => 
+    ipcRenderer.invoke('get-video-url', { accessToken, driveId, fileId }),
+  
+  // 视频代理
+  proxyVideoStream: (url) => ipcRenderer.invoke('proxy-video-stream', url),
+}); 
