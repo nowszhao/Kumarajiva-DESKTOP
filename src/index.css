@@ -2,21 +2,166 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 导入字幕样式 */
+@import './assets/css/subtitles.css';
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  color-scheme: light;
+}
+
 body {
-  @apply bg-[#f6fbfa] text-[#23272f] m-0 p-0 min-h-screen;
-  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  min-width: 100vw;
+  min-height: 100vh;
+  background-color: #f2f5fa;
+  /* 取消全局拖拽 */
+  -webkit-app-region: no-drag;
 }
 
-.container {
-  @apply max-w-[1400px] min-h-[600px] h-[90vh] my-[5vh] mx-auto bg-transparent shadow-none;
+/* 可拖拽和不可拖拽区域 */
+.drag {
+  -webkit-app-region: drag;
 }
 
-/* Custom scrollbar */
+/* 确保所有交互元素不可拖拽 */
+.no-drag, 
+button, 
+input, 
+textarea, 
+select, 
+a, 
+[role="button"], 
+.menu, 
+.menu-item, 
+li > a,
+video, 
+.btn, 
+.card, 
+.cursor-pointer, 
+div[onClick] {
+  -webkit-app-region: no-drag !important;
+}
+
+/* 紧凑化UI调整 */
+.container-fluid {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.5rem;
+  margin: 0;
+}
+
+/* 滚动条样式美化 */
 ::-webkit-scrollbar {
   width: 6px;
-  @apply bg-[#f6fbfa];
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-200 rounded-lg;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* 修复菜单项padding过大问题 */
+.menu li > a {
+  padding: 0.5rem 0.75rem;
+}
+
+.menu.menu-sm li > a {
+  padding: 0.25rem 0.5rem;
+}
+
+/* 视频播放器相关样式 */
+video {
+  display: block !important;
+  width: 100% !important;
+  background-color: #000 !important;
+  min-height: 300px !important;
+}
+
+/* 确保视频容器正确显示 */
+.video-container {
+  position: relative !important;
+  background-color: #000 !important;
+  min-height: 300px !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+/* 修复拖拽后的兼容性问题 */
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* 确保视频控件能被点击 */
+video::-webkit-media-controls {
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
+}
+
+/* 字幕列表容器样式 */
+.subtitle-container {
+  height: 100%;
+  min-height: 200px; /* 最小高度保证内容可见性 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.subtitle-list-header {
+  flex-shrink: 0;
+}
+
+.subtitle-list-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 确保字幕列表能在任何容器中滚动 */
+.subtitle-list {
+  height: 100%;
+  max-height: 100%;
+  min-height: 100px; /* 确保即使内容很少也有最小高度 */
+  overflow-y: auto;
+  overscroll-behavior: contain; /* 防止滚动传播 */
+  -webkit-overflow-scrolling: touch; /* 提高移动端滚动体验 */
+  scroll-behavior: smooth;
+  scrollbar-width: thin; /* Firefox */
+}
+
+.subtitle-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.subtitle-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.subtitle-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+/* 当前活动字幕项样式 */
+.subtitle-list .active-subtitle {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-left: 4px solid rgba(59, 130, 246, 0.8);
 } 

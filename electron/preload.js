@@ -40,6 +40,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideoUrl: (accessToken, driveId, fileId) => 
     ipcRenderer.invoke('get-video-url', { accessToken, driveId, fileId }),
   
+  // 字幕文件获取
+  getSubtitleContent: (accessToken, driveId, fileId) => 
+    ipcRenderer.invoke('get-subtitle-content', { accessToken, driveId, fileId }),
+  
   // 视频代理
   proxyVideoStream: (url) => ipcRenderer.invoke('proxy-video-stream', url),
+  
+  // 窗口控制
+  minimizeWindow: () => ipcRenderer.send('window-control', 'minimize'),
+  maximizeWindow: () => ipcRenderer.send('window-control', 'maximize'),
+  closeWindow: () => ipcRenderer.send('window-control', 'close'),
+  
+  // 令牌管理
+  getStoredToken: () => ipcRenderer.invoke('get-stored-token'),
+  clearToken: () => ipcRenderer.invoke('clear-token'),
 }); 

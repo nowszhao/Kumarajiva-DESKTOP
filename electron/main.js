@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, net, protocol, session } = require('electro
 const path = require('path');
 const fs = require('fs');
 const isDev = process.env.ELECTRON_IS_DEV !== '0';
+const iconv = require('iconv-lite');
+const axios = require('axios');
 
 let mainWindow;
 
@@ -9,6 +11,77 @@ let mainWindow;
 const CLIENT_ID = '717cbc119af349399f525555efb434e1';
 const CLIENT_SECRET = '0743bd65f7384d5c878f564de7d7276a';
 const API_BASE = 'https://openapi.alipan.com';
+
+// 令牌存储路径
+const TOKEN_STORAGE_PATH = path.join(app.getPath('userData'), 'token_storage.json');
+
+// 令牌有效期 (毫秒) - 设为7天
+const TOKEN_VALIDITY_DURATION = 7 * 24 * 60 * 60 * 1000;
+
+// 令牌存储管理
+const tokenManager = {
+  // 保存令牌到本地文件
+  saveToken(token) {
+    try {
+      const tokenData = {
+        access_token: token,
+        expiry: Date.now() + TOKEN_VALIDITY_DURATION
+      };
+
+      fs.writeFileSync(TOKEN_STORAGE_PATH, JSON.stringify(tokenData), 'utf8');
+      console.log('Token saved to file storage');
+      return true;
+    } catch (error) {
+      console.error('Error saving token:', error);
+      return false;
+    }
+  },
+
+  // 读取本地令牌
+  getToken() {
+    try {
+      if (!fs.existsSync(TOKEN_STORAGE_PATH)) {
+        console.log('No token storage file found');
+        return null;
+      }
+
+      const fileContent = fs.readFileSync(TOKEN_STORAGE_PATH, 'utf8');
+      const tokenData = JSON.parse(fileContent);
+
+      // 检查令牌是否过期
+      if (tokenData.expiry && tokenData.expiry > Date.now()) {
+        const remainingHours = Math.floor((tokenData.expiry - Date.now()) / (60 * 60 * 1000));
+        console.log(`Found valid token with ${remainingHours} hours remaining`);
+        return {
+          access_token: tokenData.access_token,
+          expiry: tokenData.expiry,
+          remaining_hours: remainingHours
+        };
+      } else {
+        console.log('Token has expired');
+        this.clearToken();
+        return null;
+      }
+    } catch (error) {
+      console.error('Error reading token:', error);
+      return null;
+    }
+  },
+
+  // 清除令牌
+  clearToken() {
+    try {
+      if (fs.existsSync(TOKEN_STORAGE_PATH)) {
+        fs.unlinkSync(TOKEN_STORAGE_PATH);
+        console.log('Token storage file deleted');
+      }
+      return true;
+    } catch (error) {
+      console.error('Error clearing token:', error);
+      return false;
+    }
+  }
+};
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -25,7 +98,15 @@ function createWindow() {
       allowRunningInsecureContent: true
     },
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#f6fbfa'
+    frame: false, // 移除默认窗口边框
+    backgroundColor: '#f6fbfa',
+    show: false // 初始不显示，等待ready-to-show事件
+  });
+
+  // 窗口准备好后最大化显示
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
   });
 
   // Load the appropriate URL based on environment
@@ -156,10 +237,45 @@ ipcMain.handle('get-access-token', async (event, { authCode }) => {
       grant_type: 'authorization_code',
       code: authCode
     });
+    
+    // 保存令牌到文件存储
+    if (response.data && response.data.access_token) {
+      tokenManager.saveToken(response.data.access_token);
+    }
+    
     return response.data;
   } catch (error) {
     console.error('Access token error:', error);
     return { error: true, message: 'Failed to get access token' };
+  }
+});
+
+// 新增：获取存储的令牌
+ipcMain.handle('get-stored-token', async () => {
+  try {
+    const tokenData = tokenManager.getToken();
+    if (tokenData) {
+      return {
+        access_token: tokenData.access_token,
+        remaining_hours: tokenData.remaining_hours
+      };
+    } else {
+      return { error: true, message: 'No valid token found' };
+    }
+  } catch (error) {
+    console.error('Get stored token error:', error);
+    return { error: true, message: 'Failed to get stored token' };
+  }
+});
+
+// 新增：清除令牌
+ipcMain.handle('clear-token', async () => {
+  try {
+    const success = tokenManager.clearToken();
+    return { success };
+  } catch (error) {
+    console.error('Clear token error:', error);
+    return { error: true, message: 'Failed to clear token' };
   }
 });
 
@@ -181,7 +297,9 @@ ipcMain.handle('load-file-list', async (event, { accessToken, driveId, folderId 
     const response = await makeRequest('POST', `${API_BASE}/adrive/v1.0/openFile/list`, 
       {
         drive_id: driveId,
-        parent_file_id: folderId
+        parent_file_id: folderId,
+        order_by: 'name',
+        order_direction: 'ASC'
       }, 
       { 'Authorization': `Bearer ${accessToken}` }
     );
@@ -226,13 +344,171 @@ ipcMain.handle('get-video-url', async (event, { accessToken, driveId, fileId }) 
   }
 });
 
+// 添加获取字幕文件的函数
+ipcMain.handle('get-subtitle-content', async (event, { accessToken, driveId, fileId }) => {
+  try {
+    console.log(`获取字幕文件下载URL: 文件ID=${fileId}`);
+    // 首先获取下载URL
+    const response = await makeRequest('POST', `${API_BASE}/adrive/v1.0/openFile/getDownloadUrl`, 
+      {
+        drive_id: driveId,
+        file_id: fileId
+      }, 
+      { 'Authorization': `Bearer ${accessToken}` }
+    );
+    
+    if (response.data && response.data.url) {
+      // 保存下载URL
+      const downloadUrl = response.data.url;
+      console.log(`获取到字幕下载URL: ${downloadUrl.substring(0, 50)}...`);
+      
+      // 下载字幕文件内容 - 使用二进制方式下载，以便后续处理编码
+      const request = net.request({
+        method: 'GET',
+        url: downloadUrl
+      });
+      
+      return new Promise((resolve, reject) => {
+        const chunks = []; // 用于收集二进制数据
+        
+        request.on('response', (response) => {
+          console.log(`字幕文件响应状态码: ${response.statusCode}`);
+          
+          response.on('data', (chunk) => {
+            chunks.push(chunk); // 收集原始二进制数据
+          });
+          
+          response.on('end', () => {
+            try {
+              // 将所有块合并成一个完整的Buffer
+              const buffer = Buffer.concat(chunks);
+              
+              // 检测可能的编码（实现简单的编码检测）
+              let encoding = 'utf-8'; // 默认编码
+              let decodedContent = '';
+              
+              // 检查BOM标记，确定编码
+              if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+                // UTF-8 with BOM
+                encoding = 'utf-8';
+                decodedContent = buffer.toString('utf-8', 3); // 跳过BOM标记
+              } else if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+                // UTF-16LE
+                encoding = 'utf-16le';
+                decodedContent = buffer.toString('utf-16le', 2);
+              } else if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+                // UTF-16BE
+                encoding = 'utf-16be';
+                decodedContent = buffer.toString('utf-16be', 2);
+              } else {
+                // 尝试使用UTF-8解码
+                try {
+                  decodedContent = buffer.toString('utf-8');
+                  // 检查UTF-8解码是否成功（如果包含中文应该解码正确）
+                  if (decodedContent.includes('')) {
+                    // UTF-8解码可能有问题，尝试其他编码
+                    console.log('UTF-8解码可能有问题，尝试其他编码');
+                    
+                    // 尝试常见的中文编码: GB18030（包含GB2312和GBK）
+                    try {
+                      decodedContent = iconv.decode(buffer, 'gb18030');
+                      encoding = 'gb18030';
+                      console.log('使用GB18030编码解码成功');
+                    } catch (e) {
+                      console.error('GB18030解码失败:', e);
+                      
+                      // 尝试BIG5编码（繁体中文）
+                      try {
+                        decodedContent = iconv.decode(buffer, 'big5');
+                        encoding = 'big5';
+                        console.log('使用BIG5编码解码成功');
+                      } catch (e2) {
+                        console.error('BIG5解码失败:', e2);
+                        // 如果所有尝试都失败，回退到UTF-8
+                        decodedContent = buffer.toString('utf-8');
+                        encoding = 'utf-8';
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.error('UTF-8解码失败:', e);
+                  // 尝试使用GB18030
+                  decodedContent = iconv.decode(buffer, 'gb18030');
+                  encoding = 'gb18030';
+                }
+              }
+              
+              console.log(`字幕文件编码检测为 ${encoding}`);
+              console.log(`字幕文件内容预览: ${decodedContent.substring(0, 100).replace(/\n/g, ' ')}...`);
+              
+              resolve({
+                content: decodedContent,
+                encoding: encoding,
+                url: downloadUrl
+              });
+            } catch (error) {
+              console.error('字幕内容处理错误:', error);
+              reject({ error: true, message: '字幕文件编码转换失败: ' + error.message });
+            }
+          });
+          
+          response.on('error', (error) => {
+            console.error('Subtitle content download error:', error);
+            reject({ error: true, message: 'Failed to download subtitle file content' });
+          });
+        });
+        
+        request.on('error', (error) => {
+          console.error('Subtitle request error:', error);
+          reject({ error: true, message: 'Failed to request subtitle file' });
+        });
+        
+        request.end();
+      });
+    } else {
+      throw new Error('Failed to get subtitle download URL');
+    }
+  } catch (error) {
+    console.error('Subtitle download error:', error);
+    return { error: true, message: 'Failed to download subtitle file' };
+  }
+});
+
 // 添加视频流代理功能
 ipcMain.handle('proxy-video-stream', async (event, url) => {
   // 直接返回原始URL，使用内置网络模块绕过CORS
   return { proxyUrl: url };
 });
 
+// 添加窗口控制事件监听
+ipcMain.on('window-control', (event, command) => {
+  if (!mainWindow) return;
+  
+  switch (command) {
+    case 'minimize':
+      mainWindow.minimize();
+      break;
+    case 'maximize':
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+      break;
+    case 'close':
+      mainWindow.close();
+      break;
+  }
+});
+
 app.whenReady().then(() => {
+  // 确保硬件加速开启
+  app.commandLine.appendSwitch('ignore-gpu-blacklist', 'true');
+  app.commandLine.appendSwitch('disable-gpu-vsync');
+  app.commandLine.appendSwitch('enable-zero-copy');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+  
   // 拦截所有网络请求来解决CORS问题
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
     // 确保所有请求都有Referer和Origin头

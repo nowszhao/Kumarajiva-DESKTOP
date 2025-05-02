@@ -1,0 +1,156 @@
+/**
+ * 字幕样式
+ * 包含全屏和非全屏模式下的字幕显示样式
+ */
+
+/* 字幕覆盖层 - 确保在视频上方且全屏时可见 */
+.subtitle-overlay {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 30% !important; /* 放在视频中下部位置 */
+  text-align: center !important;
+  z-index: 2147483647 !important; /* 最大可能的z-index */
+  pointer-events: none !important;
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+
+/* 保证字幕在全屏模式下仍然可见 */
+:fullscreen .subtitle-overlay,
+*:fullscreen ~ .subtitle-overlay,
+video:fullscreen ~ .subtitle-overlay {
+  bottom: 30% !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+
+:-webkit-full-screen .subtitle-overlay,
+*:-webkit-full-screen ~ .subtitle-overlay,
+video:-webkit-full-screen ~ .subtitle-overlay {
+  bottom: 30% !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+
+:-moz-full-screen .subtitle-overlay,
+*:-moz-full-screen ~ .subtitle-overlay,
+video:-moz-full-screen ~ .subtitle-overlay {
+  bottom: 30% !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+
+:-ms-fullscreen .subtitle-overlay,
+*:-ms-fullscreen ~ .subtitle-overlay,
+video:-ms-fullscreen ~ .subtitle-overlay {
+  bottom: 30% !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}
+
+/* 字幕文本容器 */
+.subtitle-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+
+.subtitle-wrapper.fullscreen .subtitle-text {
+  font-size: 1.6rem !important;
+  padding: 8px 16px !important;
+}
+
+.subtitle-text {
+  display: inline-block !important;
+  max-width: 80% !important;
+  background-color: rgba(0, 0, 0, 0.75) !important;
+  color: white !important;
+  padding: 6px 12px !important;
+  border-radius: 4px !important;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8) !important;
+  font-size: 1.3rem !important;
+  line-height: 1.5 !important;
+  font-weight: 500 !important;
+  text-align: center !important;
+  white-space: pre-wrap !important;
+  word-break: break-word !important;
+  box-sizing: border-box !important;
+}
+
+/* 增加在全屏模式下的字体大小 */
+:fullscreen .subtitle-text,
+*:fullscreen ~ .subtitle-overlay .subtitle-text,
+video:fullscreen ~ .subtitle-overlay .subtitle-text { 
+  font-size: 1.6rem !important;
+  padding: 8px 16px !important;
+}
+
+:-webkit-full-screen .subtitle-text,
+*:-webkit-full-screen ~ .subtitle-overlay .subtitle-text,
+video:-webkit-full-screen ~ .subtitle-overlay .subtitle-text {
+  font-size: 1.6rem !important;
+  padding: 8px 16px !important;
+}
+
+:-moz-full-screen .subtitle-text,
+*:-moz-full-screen ~ .subtitle-overlay .subtitle-text,
+video:-moz-full-screen ~ .subtitle-overlay .subtitle-text {
+  font-size: 1.6rem !important;
+  padding: 8px 16px !important;
+}
+
+:-ms-fullscreen .subtitle-text,
+*:-ms-fullscreen ~ .subtitle-overlay .subtitle-text,
+video:-ms-fullscreen ~ .subtitle-overlay .subtitle-text {
+  font-size: 1.6rem !important;
+  padding: 8px 16px !important;
+}
+
+/* 确保字幕在全屏模式下可见 */
+video::cue {
+  background-color: transparent !important;
+  color: white !important;
+  text-shadow: 1px 1px 2px black !important;
+}
+
+/* 特殊处理Electron环境下的全屏模式 */
+::-webkit-media-controls {
+  z-index: 2147483646 !important;
+}
+
+::-webkit-media-controls-enclosure {
+  z-index: auto !important;
+}
+
+/* 确保字幕容器总是可见 */
+.video-container .subtitle-overlay {
+  visibility: visible !important;
+  opacity: 1 !important;
+  display: flex !important;
+}
+
+/* 全屏模式下的字幕样式增强 */
+.fullscreen-subtitle {
+  position: fixed !important;
+  bottom: 30% !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+}
+
+/* 确保在Electron环境下全屏模式也能显示字幕 */
+.video-js.vjs-fullscreen .subtitle-overlay,
+.video-container:fullscreen .subtitle-overlay,
+:fullscreen .subtitle-overlay,
+.fullscreen .subtitle-overlay,
+.fullscreen-subtitle {
+  position: fixed !important;
+  bottom: 30% !important;
+  visibility: visible !important;
+  display: flex !important;
+  z-index: 2147483647 !important;
+} 
