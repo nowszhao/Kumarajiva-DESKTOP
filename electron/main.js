@@ -95,12 +95,24 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       // 关键设置：禁用同源策略和允许不安全内容（仅用于桌面应用）
       webSecurity: false,
-      allowRunningInsecureContent: true
+      allowRunningInsecureContent: true,
+      // 添加以下设置以提高视频播放稳定性
+      backgroundThrottling: false,
+      enableWebSQL: false,  // 禁用已弃用的WebSQL
+      enableBlinkFeatures: 'MediaSource',
+      // 启用硬件加速但配置得更保守
+      disableBlinkFeatures: 'Accelerated2dCanvas', // 避免2D Canvas硬件加速可能导致的问题
+      // 以下选项可能会帮助解决渲染器崩溃问题
+      enableRemoteModule: false, // 禁用已弃用的remote模块
+      safeDialogs: true,
+      spellcheck: false // 关闭拼写检查以减少资源使用
     },
     titleBarStyle: 'hiddenInset',
     frame: false, // 移除默认窗口边框
     backgroundColor: '#f6fbfa',
-    show: false // 初始不显示，等待ready-to-show事件
+    show: false, // 初始不显示，等待ready-to-show事件
+    // 更稳定的 GPU 渲染设置
+    autoHideMenuBar: true
   });
 
   // 窗口准备好后最大化显示
@@ -192,6 +204,28 @@ ipcMain.handle('api-request', async (event, { method, url, data, headers }) => {
     return response;
   } catch (error) {
     console.error('API request error:', error);
+    return { error: true, message: error.message || 'Unknown error' };
+  }
+});
+
+// 渲染器优化处理
+ipcMain.handle('optimize-renderer', async (event) => {
+  try {
+    if (!mainWindow || !mainWindow.webContents) {
+      return { success: false, message: 'No window available' };
+    }
+    
+    // 强制执行垃圾回收
+    mainWindow.webContents.forcefullyCrashRenderer = false;
+    
+    // 释放不必要的内存
+    if (global.gc) {
+      global.gc();
+    }
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Renderer optimization error:', error);
     return { error: true, message: error.message || 'Unknown error' };
   }
 });

@@ -55,4 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 令牌管理
   getStoredToken: () => ipcRenderer.invoke('get-stored-token'),
   clearToken: () => ipcRenderer.invoke('clear-token'),
+  
+  // 渲染器优化 - 帮助处理可能的内存和GPU问题
+  optimizeRenderer: () => ipcRenderer.invoke('optimize-renderer'),
 }); 

@@ -135,6 +135,44 @@ video::-webkit-media-controls {
   min-height: 0;
 }
 
+/* 高级功能区样式 */
+.advanced-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.advanced-panel-tabs {
+  display: flex;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.advanced-panel-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.advanced-panel-tab.active {
+  border-bottom-color: #3b82f6;
+  color: #3b82f6;
+}
+
+.advanced-panel-tab:not(.active) {
+  color: #6b7280;
+}
+
+.advanced-panel-tab:not(.active):hover {
+  color: #4b5563;
+}
+
+.advanced-panel-content {
+  flex: 1;
+  overflow: hidden;
+}
+
 /* 确保字幕列表能在任何容器中滚动 */
 .subtitle-list {
   height: 100%;

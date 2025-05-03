@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import SubtitleDisplay from './SubtitleDisplay';
-import SubtitleList from './SubtitleList';
+import AdvancedPanel from './AdvancedPanel';
 import { parseAssSubtitles } from './subtitleUtils';
 import '../styles/subtitle.css';
 
@@ -42,6 +42,38 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   const forcePlayTimerRef = useRef(null);
   const lastPlayedTimeRef = useRef(0);
   const playAttemptCountRef = useRef(0);
+  const [statusMessage, setStatusMessage] = useState('');
+  // 字幕模糊状态 - 使用明确的布尔默认值false
+  const [isSubtitleBlurred, setIsSubtitleBlurred] = useState(() => {
+    try {
+      // 从localStorage获取保存的设置，将字符串转换为布尔值
+      const savedValue = localStorage.getItem('subtitle-blur-enabled');
+      // 仅当值为字符串"true"时返回true，其他情况均为false
+      return savedValue === 'true';
+    } catch (e) {
+      console.error('[ERROR] 读取字幕模糊设置失败:', e);
+      return false;
+    }
+  });
+
+  // 组件加载时，从localStorage恢复字幕循环状态和模糊状态
+  useEffect(() => {
+    try {
+      const savedLoopState = localStorage.getItem('subtitle-loop-enabled');
+      if (savedLoopState === 'true') {
+        setIsLoopingSubtitle(true);
+        console.log('[INFO] 从存储中恢复字幕循环状态: 启用');
+      }
+      
+      const savedBlurState = localStorage.getItem('subtitle-blur-enabled');
+      if (savedBlurState === 'true') {
+        setIsSubtitleBlurred(true);
+        console.log('[INFO] 从存储中恢复字幕模糊状态: 启用');
+      }
+    } catch (e) {
+      console.error('[ERROR] 读取字幕设置失败:', e);
+    }
+  }, []);
 
   // 初始化视频看门狗系统
   useEffect(() => {
@@ -378,40 +410,62 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     // 如果未启用循环，直接退出
     if (!isLoopingSubtitle) return;
     
+    // 保存当前循环的字幕索引，用于防止在循环过程中切换到其他字幕
+    const lockedSubtitleIndex = currentSubtitleIndex;
+    
+    // 记录要循环的字幕信息，增加鲁棒性
+    let loopSubtitle = null;
+    if (lockedSubtitleIndex >= 0 && 
+        parsedSubtitles && 
+        Array.isArray(parsedSubtitles) &&
+        lockedSubtitleIndex < parsedSubtitles.length) {
+      loopSubtitle = { ...parsedSubtitles[lockedSubtitleIndex] };
+      console.log(`[DEBUG] 锁定循环字幕: #${lockedSubtitleIndex}, 开始时间: ${loopSubtitle.start}ms, 结束时间: ${loopSubtitle.end}ms`);
+    } else {
+      console.warn('[WARN] 要循环的字幕无效或不存在，无法启用循环');
+      return;
+    }
+    
+    // 确保字幕有效
+    if (!loopSubtitle || 
+        typeof loopSubtitle.start !== 'number' || 
+        typeof loopSubtitle.end !== 'number') {
+      console.warn('[WARN] 字幕时间无效，无法启用循环');
+      return;
+    }
+    
     // 使用setInterval而不是事件监听
     const intervalId = setInterval(() => {
       try {
         const video = videoRef.current;
         if (!video || video.paused) return;
         
-        // 极简版本 - 只执行最基本的功能，避免任何可能的复杂操作
-        if (currentSubtitleIndex >= 0 && 
-            parsedSubtitles && 
-            currentSubtitleIndex < parsedSubtitles.length) {
-          
-          const currentMs = video.currentTime * 1000;
-          const subtitle = parsedSubtitles[currentSubtitleIndex];
-          
-          if (subtitle && 
-              typeof subtitle.start === 'number' && 
-              typeof subtitle.end === 'number' && 
-              currentMs > subtitle.end) {
+        const currentMs = video.currentTime * 1000;
+        
+        // 检测是否播放超出了当前循环字幕的范围
+        if (currentMs < loopSubtitle.start || currentMs > loopSubtitle.end) {
+          try {
+            // 重置到字幕开始时间
+            console.log('[DEBUG] 循环字幕: 重置到开始位置');
+            video.currentTime = loopSubtitle.start / 1000;
             
-            // 简单直接设置时间，不使用复杂的callback
-            try {
-              video.currentTime = subtitle.start / 1000;
-            } catch (e) {
-              // 静默失败，不执行额外操作
+            // 重要：强制更新当前字幕索引，防止被自动更新机制切换
+            if (currentSubtitleIndex !== lockedSubtitleIndex) {
+              setCurrentSubtitleIndex(lockedSubtitleIndex);
             }
+          } catch (e) {
+            console.error('[ERROR] 字幕循环跳转失败:', e);
           }
         }
       } catch (e) {
         // 捕获错误但不执行复杂处理
+        console.error('[ERROR] 字幕循环处理错误:', e);
       }
-    }, 250); // 每250ms检查一次，降低CPU使用
+    }, 100); // 降低间隔以提高响应性，从250ms到100ms
     
     // 简单的清理函数
     return () => {
+      console.log('[DEBUG] 清理字幕循环定时器');
       clearInterval(intervalId);
     };
   }, [isLoopingSubtitle, currentSubtitleIndex, parsedSubtitles]);
@@ -987,10 +1041,71 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   // 切换字幕循环状态
   const toggleSubtitleLoop = () => {
     try {
-      // 极简版本 - 只执行最基本的状态切换
-      setIsLoopingSubtitle(current => !current);
+      // 获取当前循环状态
+      const newLoopState = !isLoopingSubtitle;
+
+      // 禁用循环的情况
+      if (!newLoopState) {
+        // 提示用户已禁用循环
+        setStatusMessage('字幕循环已禁用');
+        setTimeout(() => setStatusMessage(''), 3000);
+        setIsLoopingSubtitle(false);
+        return;
+      }
+      
+      // 启用循环前的各种检查
+      
+      // 1. 检查是否有字幕内容
+      if (!parsedSubtitles || !Array.isArray(parsedSubtitles) || parsedSubtitles.length === 0) {
+        console.warn('[WARN] 没有可用的字幕数据，无法启用循环');
+        setStatusMessage('无法启用循环：没有字幕内容');
+        setTimeout(() => setStatusMessage(''), 3000);
+        return;
+      }
+      
+      // 2. 检查当前是否有选中的字幕
+      if (currentSubtitleIndex < 0 || currentSubtitleIndex >= parsedSubtitles.length) {
+        console.warn('[WARN] 启用循环但没有当前字幕，操作无效');
+        setStatusMessage('请先播放到有字幕的位置再启用循环');
+        setTimeout(() => setStatusMessage(''), 3000);
+        return;
+      }
+      
+      // 3. 检查选中的字幕是否有效
+      const targetSubtitle = parsedSubtitles[currentSubtitleIndex];
+      if (!targetSubtitle || 
+          typeof targetSubtitle.start !== 'number' ||
+          typeof targetSubtitle.end !== 'number') {
+        console.warn('[WARN] 当前字幕数据无效，无法启用循环');
+        setStatusMessage('无法启用循环：字幕数据无效');
+        setTimeout(() => setStatusMessage(''), 3000);
+        return;
+      }
+      
+      // 4. 检查当前字幕时长合理性
+      const duration = (targetSubtitle.end - targetSubtitle.start) / 1000; // 转换为秒
+      if (duration <= 0 || duration > 30) {
+        console.warn(`[WARN] 当前字幕时长异常 (${duration.toFixed(1)}秒)，但仍然启用循环`);
+      }
+      
+      // 提示用户已启用循环
+      setStatusMessage(`字幕循环已启用: #${currentSubtitleIndex + 1}`);
+      setTimeout(() => setStatusMessage(''), 3000);
+      
+      // 所有检查通过，启用循环
+      setIsLoopingSubtitle(true);
+      
+      // 记忆用户的选择
+      try {
+        localStorage.setItem('subtitle-loop-enabled', 'true');
+      } catch (e) {
+        console.error('[ERROR] 保存字幕循环设置失败:', e);
+      }
+      
     } catch (err) {
       console.error('[ERROR] 切换字幕循环状态失败:', err);
+      setStatusMessage('切换字幕循环失败，请重试');
+      setTimeout(() => setStatusMessage(''), 3000);
     }
   };
   
@@ -1000,6 +1115,14 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       if (!parsedSubtitles || !Array.isArray(parsedSubtitles) || !parsedSubtitles.length || !videoRef.current) {
         console.warn('[WARN] 没有可用的字幕数据或视频元素');
         return;
+      }
+      
+      // 如果正在循环字幕，先禁用循环再切换
+      if (isLoopingSubtitle) {
+        console.log('[INFO] 在字幕循环状态下切换字幕，自动禁用循环');
+        setIsLoopingSubtitle(false);
+        setStatusMessage('字幕循环已禁用，切换到上一句');
+        setTimeout(() => setStatusMessage(''), 3000);
       }
       
       // 安全检查 - 确保字幕数组结构正确
@@ -1090,6 +1213,14 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       if (!parsedSubtitles || !Array.isArray(parsedSubtitles) || !parsedSubtitles.length || !videoRef.current) {
         console.warn('[WARN] 没有可用的字幕数据或视频元素');
         return;
+      }
+      
+      // 如果正在循环字幕，先禁用循环再切换
+      if (isLoopingSubtitle) {
+        console.log('[INFO] 在字幕循环状态下切换字幕，自动禁用循环');
+        setIsLoopingSubtitle(false);
+        setStatusMessage('字幕循环已禁用，切换到下一句');
+        setTimeout(() => setStatusMessage(''), 3000);
       }
       
       // 安全检查 - 确保字幕数组结构正确
@@ -1406,6 +1537,55 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     };
   }, []);
 
+  // 切换字幕模糊状态
+  const toggleSubtitleBlur = () => {
+    try {
+      // 简化状态更新逻辑，避免复杂嵌套
+      const currentState = isSubtitleBlurred === true;
+      const newState = !currentState;
+      
+      console.log('[DEBUG] 字幕模糊按钮点击，当前状态:', currentState, '切换到:', newState);
+      
+      // 直接设置新状态
+      setIsSubtitleBlurred(newState);
+      
+      // 提示用户已切换模糊状态
+      setStatusMessage(newState ? '字幕已模糊显示' : '字幕已恢复正常显示');
+      setTimeout(() => setStatusMessage(''), 2000);
+      
+      // 记住用户的选择
+      try {
+        localStorage.setItem('subtitle-blur-enabled', String(newState));
+      } catch (storageErr) {
+        console.error('[ERROR] 保存字幕模糊设置失败:', storageErr);
+      }
+      
+      // 确保在Electron环境中执行一些内存优化
+      if (isElectron() && window.electronAPI) {
+        // 请求渲染进程执行一些清理工作
+        setTimeout(() => {
+          if (typeof window.electronAPI.optimizeRenderer === 'function') {
+            window.electronAPI.optimizeRenderer().catch(e => 
+              console.error('Renderer optimization failed:', e)
+            );
+          }
+        }, 100);
+      }
+      
+    } catch (err) {
+      console.error('[ERROR] 切换字幕模糊状态失败:', err);
+      // 出错时提示用户
+      setStatusMessage('字幕模糊切换失败');
+      setTimeout(() => setStatusMessage(''), 2000);
+    }
+  };
+  
+  // 安全地获取字幕模糊状态的布尔值
+  const getBlurEnabledState = () => {
+    // 简化函数，直接返回布尔值
+    return isSubtitleBlurred === true;
+  };
+
   return (
     <div className="flex-1 bg-white rounded-lg shadow-sm p-3 flex flex-col min-h-0">
       {currentVideo ? (
@@ -1458,27 +1638,13 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
               {/* 视频控制面板 */}
               <div className="absolute top-2 right-2 p-1 bg-black bg-opacity-50 text-white text-xs z-20 rounded-md flex items-center">
                 {/* 字幕控制按钮 - 只在有有效字幕内容时显示 */}
-                {console.log('[DEBUG] 字幕控制条件检查:', {
-                  hasSubtitleContent: !!subtitleContent,
-                  hasParsedSubtitles: !!parsedSubtitles,
-                  isArray: Array.isArray(parsedSubtitles),
-                  subtitlesLength: parsedSubtitles?.length || 0
-                })}
                 {subtitleContent && (
                   <>
                     <div className="flex items-center mr-3">
                       {/* 替换标准checkbox为简单按钮，避免复杂事件处理 */}
                       <button 
                         className={`subtitle-loop-btn px-2 py-1 rounded text-xs ${isLoopingSubtitle ? 'bg-yellow-500' : 'bg-gray-700'}`}
-                        onClick={() => {
-                          try {
-                            console.log('[DEBUG] 循环按钮点击事件触发');
-                            // 使用简单的状态切换而不是调用复杂函数
-                            setIsLoopingSubtitle(!isLoopingSubtitle);
-                          } catch (err) {
-                            console.error('[ERROR] 循环按钮事件处理失败:', err);
-                          }
-                        }}
+                        onClick={toggleSubtitleLoop}
                         title="字幕循环播放"
                       >
                         循环: {isLoopingSubtitle ? '开' : '关'}
@@ -1505,6 +1671,14 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                         title="下一句字幕"
                       >
                         ⏭
+                      </button>
+                      
+                      <button
+                        onClick={toggleSubtitleBlur}
+                        className={`${getBlurEnabledState() ? 'bg-blue-500' : 'bg-gray-700'} px-2 py-0.5 rounded`}
+                        title="字幕模糊显示"
+                      >
+                        模糊: {getBlurEnabledState() ? '开' : '关'}
                       </button>
                     </div>
                     
@@ -1543,6 +1717,13 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                 )}
               </div>
             
+              {/* 状态消息显示 */}
+              {statusMessage && (
+                <div className="absolute top-12 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-80 text-white px-4 py-2 rounded-lg z-30 text-sm whitespace-nowrap">
+                  {statusMessage}
+                </div>
+              )}
+            
               <div className="video-container relative">
                 {/* 视频加载中显示加载指示器 */}
                 {videoStatus === 'loading' && (
@@ -1559,12 +1740,12 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                 {/* 内嵌字幕直接覆盖在视频上 */}
                 <div className="custom-video-container relative w-full h-full" style={{ overflow: 'hidden' }}>
                   <div className="video-wrapper relative w-full h-full">
-            <video 
-              ref={videoRef}
+                    <video 
+                      ref={videoRef}
                       className="w-full h-full rounded bg-gray-900 object-contain"
-              controls
-              autoPlay
-              playsInline
+                      controls
+                      autoPlay
+                      playsInline
                       style={{
                         minHeight: '300px',
                         border: '1px solid #333',
@@ -1579,41 +1760,43 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                           subtitleContent={subtitleContent}
                           currentTime={currentTime}
                           isFullscreen={false}
+                          isBlurred={getBlurEnabledState()}
                         />
                       </div>
                     )}
                   </div>
-                  
-                  {/* 视频外部字幕层 - 作为备用，当全屏时内嵌字幕可能无法显示 */}
-                  {subtitleContent && currentTime > 0 && (
-                    <div 
-                      id="external-subtitle-overlay"
-                      className="external-subtitle-overlay" 
-                      style={{
-                        opacity: isFullscreen ? 1 : 0,
-                        visibility: isFullscreen ? 'visible' : 'hidden'
-                      }}
-                    >
-                      <SubtitleDisplay 
-                        subtitleContent={subtitleContent}
-                        currentTime={currentTime}
-                        isFullscreen={true}
-                      />
-                    </div>
-                  )}
                 </div>
               </div>
+              
+              {/* 视频外部字幕层 - 作为备用，当全屏时内嵌字幕可能无法显示 */}
+              {subtitleContent && currentTime > 0 && (
+                <div 
+                  id="external-subtitle-overlay"
+                  className="external-subtitle-overlay" 
+                  style={{
+                    opacity: isFullscreen ? 1 : 0,
+                    visibility: isFullscreen ? 'visible' : 'hidden'
+                  }}
+                >
+                  <SubtitleDisplay 
+                    subtitleContent={subtitleContent}
+                    currentTime={currentTime}
+                    isFullscreen={true}
+                    isBlurred={getBlurEnabledState()}
+                  />
+                </div>
+              )}
             </div>
             
-            {/* 字幕列表区 - 固定高度，独立滚动 */}
+            {/* 高级功能区 - 包含字幕列表和字幕解析 */}
             {showSubtitleList && currentSubtitle && (
-              <div className="w-5/12 min-w-[280px] max-w-[400px] subtitle-container border border-gray-200 rounded">
+              <div className="w-5/12 min-w-[280px] max-w-[400px] subtitle-container border border-gray-200 rounded overflow-hidden">
                 <div className="subtitle-list-header bg-gray-100 px-3 py-2 border-b border-gray-200 text-sm font-medium flex items-center justify-between">
-                  <span>字幕列表</span>
-                  <span className="text-xs text-gray-500">(点击跳转)</span>
+                  <span>高级功能区</span>
+                  <span className="text-xs text-gray-500">(字幕列表 / 字幕解析)</span>
                 </div>
-                <div className="subtitle-list-body bg-gray-50">
-                  <SubtitleList 
+                <div className="subtitle-list-body bg-gray-50 flex-1 h-full overflow-hidden">
+                  <AdvancedPanel 
                     subtitleContent={subtitleContent}
                     currentTime={currentTime}
                     onSubtitleClick={seekToTime}
@@ -1624,12 +1807,21 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-400">
-          请点击视频文件进行播放
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-xl mb-2">视频加载失败</div>
+            <div className="text-sm text-gray-300">请尝试其他视频或刷新页面</div>
+            <button 
+              className="mt-4 btn btn-sm btn-outline btn-warning"
+              onClick={() => window.location.reload()}
+            >
+              刷新页面
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export default PlayerPanel; 
+export default PlayerPanel;

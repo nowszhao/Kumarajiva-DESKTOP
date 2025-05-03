@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"cross-env BROWSER=none vite --host\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently -k \"cross-env BROWSER=none vite --host\" \"wait-on http://localhost:5173 && electron . --enable-logging\"",
     "electron:build": "vite build && electron-builder",
     "electron:preview": "vite build && cross-env ELECTRON_IS_DEV=0 electron ."
   },

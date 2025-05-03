@@ -372,7 +372,7 @@ function App() {
       
       {/* Debug Info Panel - Only visible in dev mode */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="bg-gray-900 text-white text-xs p-2 overflow-auto" style={{ maxHeight: '150px' }}>
+        <div className="bg-gray-900 text-white text-xs p-2 overflow-auto" style={{ maxHeight: '20px' }}>
           <div><strong>Debug Info:</strong></div>
           <div>Auth State: {authState}</div>
           <div>Is Logged In: {isLoggedIn ? 'true' : 'false'}</div>
