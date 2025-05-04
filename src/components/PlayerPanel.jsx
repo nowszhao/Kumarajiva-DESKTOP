@@ -1146,7 +1146,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       
       const video = videoRef.current;
       video.pause();
-      
+      setIsLoopingSubtitle(false);
 
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1226,8 +1226,9 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         }
       }
 
-
+      setIsLoopingSubtitle(true);
       video.play();
+
     } catch (err) {
       console.error('[ERROR] 切换到下一个字幕失败:', err);
     }
