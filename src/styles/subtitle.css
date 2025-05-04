@@ -3,7 +3,7 @@
   display: flex;
   justify-content: center;
   width: 100%;
-  pointer-events: auto;
+  pointer-events: auto !important;
   z-index: 100;
 }
 
@@ -12,7 +12,7 @@
   max-width: 90%;
   background-color: rgba(0, 0, 0, 0.75);
   color: white;
-  padding: 4px 8px;
+  padding: 8px 12px;
   border-radius: 4px;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
   line-height: 1.3;
@@ -22,12 +22,14 @@
   white-space: pre-wrap;
   word-break: break-word;
   user-select: none;
-  z-index: 2147483647;
+  z-index: 2147483647 !important;
   position: absolute;
   bottom: 10%;
   left: 50%;
   transform: translateX(-50%);
-  transition: filter 0.3s ease;
+  transition: transform 0.1s ease-out, filter 0.3s ease, box-shadow 0.2s ease;
+  cursor: grab;
+  pointer-events: all !important;
 }
 
 /* 模糊字幕样式 */
@@ -39,14 +41,46 @@
 /* 可拖动字幕样式 */
 .draggable {
   cursor: grab;
-  transition: border 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease;
+  position: relative;
+  border: 1px solid transparent;
+  transition: border 0.2s ease, box-shadow 0.2s ease, filter 0.3s ease, transform 0.1s ease-out;
+  pointer-events: auto !important;
 }
 
 .draggable:hover {
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+  border: 1px dashed rgba(255, 255, 255, 0.4);
 }
 
 .draggable:active {
+  cursor: grabbing;
+}
+
+/* 拖动手柄样式 */
+.drag-handle {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.75);
+  color: white;
+  font-size: 14px;
+  padding: 1px 8px;
+  border-radius: 4px 4px 0 0;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 2;
+  user-select: none;
+  pointer-events: auto !important;
+}
+
+.draggable:hover .drag-handle {
+  opacity: 0.8;
+}
+
+.draggable.dragging .drag-handle {
+  opacity: 1;
   cursor: grabbing;
 }
 
@@ -71,6 +105,22 @@
   border: 2px dashed rgba(255, 255, 255, 0.7) !important;
   opacity: 0.9;
   cursor: grabbing !important;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.4) !important;
+  z-index: 2147483647 !important;
+  position: relative !important;
+  pointer-events: all !important;
+}
+
+/* 重置位置的动画效果 */
+.reset-position {
+  animation: pulse 0.3s ease-in-out;
+  border: 2px solid rgba(255, 255, 255, 0.8) !important;
+}
+
+@keyframes pulse {
+  0% { transform: translate(-50%, 0) scale(1); }
+  50% { transform: translate(-50%, 0) scale(1.05); }
+  100% { transform: translate(-50%, 0) scale(1); }
 }
 
 /* 外部字幕容器 - 用于全屏模式 */
@@ -81,8 +131,8 @@
   bottom: 10%;
   width: 100%;
   text-align: center;
-  z-index: 2147483647;
-  pointer-events: auto;
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
 }
 
 /* 内部字幕容器 - 用于非全屏模式 */
@@ -93,15 +143,15 @@
   bottom: 5%;
   width: 100%;
   text-align: center;
-  z-index: 9999;
-  pointer-events: auto;
+  z-index: 9999 !important;
+  pointer-events: auto !important;
   padding: 0 10px;
 }
 
 /* 字幕文本行 */
 .subtitle-line {
   margin: 1px 0;
-  width: 600px;
+  max-width: 600px;
 }
 
 /* 双语字幕样式 */
@@ -138,6 +188,7 @@
 /* 确保字幕在video元素之上 */
 .custom-video-container .inner-subtitle-overlay {
   z-index: 20;
+  pointer-events: all !important;
 }
 
 /* 视频全屏时确保字幕显示 */
@@ -145,11 +196,35 @@ video::-webkit-media-controls {
   z-index: 2147483646 !important;
 }
 
-video:fullscreen + .external-subtitle-overlay,
-video:fullscreen ~ .external-subtitle-overlay {
-  z-index: 2147483647;
-  visibility: visible !important;
-  opacity: 1 !important;
+/* 防止播放器控件阻挡字幕 */
+video::-webkit-media-controls-panel {
+  z-index: auto !important;
+}
+
+/* 确保全屏下字幕也可以操作 */
+:fullscreen .draggable,
+:-webkit-full-screen .draggable,
+:-moz-full-screen .draggable {
+  pointer-events: auto !important;
+}
+
+/* 防止全屏下控件与字幕交互冲突 */
+:fullscreen video,
+:-webkit-full-screen video,
+:-moz-full-screen video {
+  z-index: 1;
+}
+
+/* 确保拖拽手柄在全屏模式也显示 */
+:fullscreen .drag-handle,
+:-webkit-full-screen .drag-handle,
+:-moz-full-screen .drag-handle {
+  pointer-events: auto !important;
+}
+
+/* 全屏字幕容器特殊处理 */
+#external-subtitle-overlay {
+  pointer-events: auto !important;
 }
 
 /* 字幕控制面板样式 */
@@ -248,6 +323,4 @@ video:fullscreen ~ .external-subtitle-overlay {
   align-items: center;
   justify-content: center;
   color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 } 
