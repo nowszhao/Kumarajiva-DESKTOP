@@ -187,8 +187,15 @@ function App() {
     try {
       const result = await electronAPI.loadFileList(token || accessToken, driveIdValue || driveId, folderId);
       
+      console.log('##########loadFileList result', result);
+
       if (result.error) {
         throw new Error(result.message);
+      }
+
+      if(result.code === 'AccessTokenExpired') {
+        handleTokenExpired();
+        return;
       }
       
       setFiles(result.items || []);
@@ -369,45 +376,6 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <TitleBar userName={userName} isLoggedIn={isLoggedIn} onLogout={logout} />
-      
-      {/* Debug Info Panel - Only visible in dev mode */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-gray-900 text-white text-xs p-2 overflow-auto" style={{ maxHeight: '20px' }}>
-          <div><strong>Debug Info:</strong></div>
-          <div>Auth State: {authState}</div>
-          <div>Is Logged In: {isLoggedIn ? 'true' : 'false'}</div>
-          <div>Using Stored Token: {usingStoredToken ? 'true' : 'false'}</div>
-          <div>Token Status: {tokenStatus}</div>
-          <div>User Name: {userName || 'none'}</div>
-          <div>Has Access Token: {accessToken ? 'true' : 'false'}</div>
-          <div>Current Folder: {currentFolderId}</div>
-          <div>Files Count: {files.length}</div>
-          <div className="flex space-x-2 mt-1">
-            <button 
-              className="bg-red-800 px-2 py-0.5 rounded text-xs"
-              onClick={logout}
-            >
-              Clear Tokens
-            </button>
-            <button 
-              className="bg-green-800 px-2 py-0.5 rounded text-xs"
-              onClick={checkStoredToken}
-            >
-              Check Token
-            </button>
-            <button 
-              className="bg-blue-800 px-2 py-0.5 rounded text-xs"
-              onClick={async () => {
-                console.log('Checking stored token status...');
-                const tokenData = await electronAPI.getStoredToken();
-                console.log('Token Data:', tokenData);
-              }}
-            >
-              Check Token
-            </button>
-          </div>
-        </div>
-      )}
       
       {/* 登录状态下显示主界面 */}
       {isLoggedIn ? (

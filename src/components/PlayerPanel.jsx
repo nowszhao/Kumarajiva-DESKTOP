@@ -1117,13 +1117,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         return;
       }
       
-      // 如果正在循环字幕，先禁用循环再切换
-      if (isLoopingSubtitle) {
-        console.log('[INFO] 在字幕循环状态下切换字幕，自动禁用循环');
-        setIsLoopingSubtitle(false);
-        setStatusMessage('字幕循环已禁用，切换到上一句');
-        setTimeout(() => setStatusMessage(''), 3000);
-      }
+      const video = videoRef.current;
+      video.pause();
       
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1202,6 +1197,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           console.warn(`[WARN] 字幕跳转时间无效: ${targetTime}`);
         }
       }
+
+      video.play();
     } catch (err) {
       console.error('[ERROR] 切换到上一个字幕失败:', err);
     }
@@ -1209,20 +1206,18 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   
   // 切换到下一个字幕
   const goToNextSubtitle = () => {
+
+    console.log('切换到下一个字幕');
+
     try {
       if (!parsedSubtitles || !Array.isArray(parsedSubtitles) || !parsedSubtitles.length || !videoRef.current) {
         console.warn('[WARN] 没有可用的字幕数据或视频元素');
         return;
       }
       
-      // 如果正在循环字幕，先禁用循环再切换
-      if (isLoopingSubtitle) {
-        console.log('[INFO] 在字幕循环状态下切换字幕，自动禁用循环');
-        setIsLoopingSubtitle(false);
-        setStatusMessage('字幕循环已禁用，切换到下一句');
-        setTimeout(() => setStatusMessage(''), 3000);
-      }
-      
+      const video = videoRef.current;
+      video.pause();
+
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
       if (parsedSubtitles.length > MAX_SUBTITLES) {
@@ -1300,6 +1295,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           console.warn(`[WARN] 字幕跳转时间无效: ${targetTime}`);
         }
       }
+
+      video.play();
     } catch (err) {
       console.error('[ERROR] 切换到下一个字幕失败:', err);
     }
@@ -1307,6 +1304,9 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   
   // 切换播放/暂停状态
   const togglePlayPause = () => {
+
+    console.log('切换播放/暂停状态');
+
     const video = videoRef.current;
     if (!video) return;
     

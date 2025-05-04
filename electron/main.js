@@ -112,7 +112,9 @@ function createWindow() {
     backgroundColor: '#f6fbfa',
     show: false, // 初始不显示，等待ready-to-show事件
     // 更稳定的 GPU 渲染设置
-    autoHideMenuBar: true
+    autoHideMenuBar: true,
+    // 添加图标设置，确保在开发环境也使用自定义图标
+    icon: path.join(__dirname, '../src/assets/logo.png')
   });
 
   // 窗口准备好后最大化显示
@@ -536,12 +538,41 @@ ipcMain.on('window-control', (event, command) => {
 });
 
 app.whenReady().then(() => {
+  console.log('应用程序准备就绪');
+  console.log('当前工作目录:', process.cwd());
+  console.log('应用程序目录:', app.getAppPath());
+  console.log('平台:', process.platform);
+  
+  // 设置应用名称，这可能会影响macOS如何处理图标
+  app.setName('Kumarajiva');
+  
   // 确保硬件加速开启
   app.commandLine.appendSwitch('ignore-gpu-blacklist', 'true');
   app.commandLine.appendSwitch('disable-gpu-vsync');
   app.commandLine.appendSwitch('enable-zero-copy');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
   app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+  
+  // 为macOS设置Dock图标
+  if (process.platform === 'darwin') {
+    // 尝试多种图标格式
+    let iconPath = path.join(__dirname, '../src/assets/logo.png');
+    
+    // 如果.icns文件不存在，回退到PNG
+    if (!fs.existsSync(iconPath)) {
+      iconPath = path.join(__dirname, '../src/assets/logo.png');
+    }
+    
+    console.log('Setting dock icon with path:', iconPath);
+    console.log('图标文件是否存在:', fs.existsSync(iconPath));
+    
+    try {
+      app.dock.setIcon(iconPath);
+      console.log('成功设置dock图标');
+    } catch (error) {
+      console.error('设置dock图标失败:', error);
+    }
+  }
   
   // 拦截所有网络请求来解决CORS问题
   session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {

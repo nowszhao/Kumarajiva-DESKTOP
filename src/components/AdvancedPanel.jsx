@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
 import SubtitleList from './SubtitleList';
+import llmService from '../utils/LlmService';
 
 
 function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
@@ -82,27 +82,6 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
       }
     }
   }, [contentHash, analysisResult, isAnalyzing, checkCachedAnalysis]);
-  
-  // 创建LLM会话
-  const createConversation = async () => {
-    try {
-      const response = await axios.post('http://47.121.117.100:3000/api/llm/conversation/create', {
-        agentId: "naQivTmsDa",
-        cookie: "_qimei_uuid42=193010b053510040bdbe959987347987350c2698a9; hy_source=web; _qimei_fingerprint=579ad3031f0737dafe77266cbcb409d8; _qimei_i_3=66c04685c60e02dac5c4fe615b8626e3f2b8f6a04409578be2de7b5e2e93753e626a3f973989e2a0d790; _qimei_h38=72e5991abdbe9599873479870300000f019301; hy_user=changhozhao; hy_token=ybUPT4mXukWon0h18MPy9Z9z/kUm76vaMMrI/RwMoSEjdtz7lJl8vPi66lDYZhkX; _qimei_i_1=4cde5185970f55d2c896af620fd626e9f2e7adf915580785bd872f582593206c616361953980e1dcd784a1e7; hy_source=web; hy_token=ybUPT4mXukWon0h18MPy9Z9z/kUm76vaMMrI/RwMoSEjdtz7lJl8vPi66lDYZhkX; hy_user=changhozhao"
-      });
-      
-      if (response.data.success) {
-        console.log("创建LLM会话成功:", response.data.data.id);
-        return response.data.data.id;
-      } else {
-        throw new Error("创建会话失败: " + JSON.stringify(response.data));
-      }
-    } catch (error) {
-      console.error("创建LLM会话出错:", error);
-      setError("创建AI分析会话失败: " + (error.message || "未知错误"));
-      return null;
-    }
-  };
   
   // 获取当前字幕文本
   const getCurrentSubtitleText = () => {
@@ -190,92 +169,19 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
     setError(null);
     
     try {
-      // 确保有会话ID
-      let conversationId = conversation;
-      if (!conversationId) {
-        conversationId = await createConversation();
-        setConversation(conversationId);
-      }
+      // 使用LlmService分析字幕
+      const { result, conversationId } = await llmService.analyzeSubtitleContent(subtitleText, conversation);
       
-      if (!conversationId) {
-        throw new Error("未能创建有效的分析会话");
-      }
+      // 更新组件状态
+      setAnalysisResult(result);
+      setConversation(conversationId);
       
-      // 构建分析提示
-      const prompt = `
-###
-你现在一位翻译专家，现在正帮我理解一个英语字幕文件，要求如下：
-1、您的任务是翻译和分析给定文本中的语言难点，这些难点可能包括对非母语学习者具有挑战性的词汇、短语、俚语、缩写、简写以及网络用语等。
-2、输出请遵循以下要求：
-    - 类型：包括单词、短语/词块、俚语、缩写（Words, Phrases, Slang, Abbreviations）
-    - 词汇：识别出句子中所有词汇，包括短语/词块、俚语、缩写
-    - 难度：使用CEFR评级（C2, C1, B2, B1, A2, A1），从高到低排序
-    - 词性：使用n., v., adj., adv., phrase等标准缩写
-    - 音标：提供美式音标
-    - 中文解释：根据字幕语境给出最贴切的含义
-    - 中英混合句子：使用词汇造一个句子，中文句子除了该词汇外，其他均为中文，需要保证语法正确，通过在完整中文语境中嵌入单一核心英语术语，帮助学习者直观理解专业概念的实际用法；英语句子在括号中展示。
-3、输出格式为json数组，示例如下：
-[
-    {
-        "type": "Words",
-        "vocabulary": "ubiquitous",
-        "difficulty": "C1",
-        "part_of_speech": "adj.",
-        "phonetic": "/juːˈbɪkwɪtəs/",
-        "chinese_meaning": "无处不在的",
-        "chinese_english_sentence": "在当今的数字时代，智能手机已经ubiquitous，使人们更容易保持联系。(In today's digital age, smartphones have become ubiquitous, significantly enhancing people's ability to maintain social connections.)"
-    }
-]
-
-4、其他注意事项：
-- 优先选择在语境中确实影响理解的表达，而不仅仅是生僻词
-- 如遇同等难度的表达，优先选择在日常生活或学习中更有用的
-
-以下是需要分析的字幕文本：
-${subtitleText}
-###
-`;
-
-      console.log("发送分析请求，会话ID:", conversationId);
-      const response = await axios.post(`http://47.121.117.100:3000/api/llm/chat/${conversationId}`, {
-        prompt: prompt,
-        agentId: "naQivTmsDa",
-        model: "gpt_175B_0404",
-        cookie: "_qimei_uuid42=193010b053510040bdbe959987347987350c2698a9; hy_source=web; _qimei_fingerprint=579ad3031f0737dafe77266cbcb409d8; _qimei_i_3=66c04685c60e02dac5c4fe615b8626e3f2b8f6a04409578be2de7b5e2e93753e626a3f973989e2a0d790; _qimei_h38=72e5991abdbe9599873479870300000f019301; hy_user=changhozhao; hy_token=ybUPT4mXukWon0h18MPy9Z9z/kUm76vaMMrI/RwMoSEjdtz7lJl8vPi66lDYZhkX; _qimei_i_1=4cde5185970f55d2c896af620fd626e9f2e7adf915580785bd872f582593206c616361953980e1dcd784a1e7; hy_source=web; hy_token=ybUPT4mXukWon0h18MPy9Z9z/kUm76vaMMrI/RwMoSEjdtz7lJl8vPi66lDYZhkX; hy_user=changhozhao"
-      });
+      // 保存分析结果到缓存
+      saveAnalysisToCache(result);
       
-      if (response.data.success) {
-        console.log("分析结果:", response.data);
-        try {
-          // 尝试解析返回的JSON
-          const content = response.data.data.content;
-          
-          // 查找JSON数据
-          let jsonData = null;
-          const jsonMatch = content.match(/\[\s*\{.+\}\s*\]/s);
-          
-          if (jsonMatch) {
-            jsonData = JSON.parse(jsonMatch[0]);
-          } else {
-            throw new Error("无法从响应中提取JSON数据");
-          }
-          
-          if (Array.isArray(jsonData) && jsonData.length > 0) {
-            setAnalysisResult(jsonData);
-            // 保存分析结果到缓存
-            saveAnalysisToCache(jsonData);
-            // 更新最后分析的内容hash
-            setLastAnalysisHash(contentHash);
-          } else {
-            setError("解析结果为空或格式不正确");
-          }
-        } catch (parseError) {
-          console.error("解析AI响应JSON错误:", parseError);
-          setError("解析分析结果出错: " + parseError.message);
-        }
-      } else {
-        throw new Error("AI分析请求失败: " + JSON.stringify(response.data));
-      }
+      // 更新最后分析的内容hash
+      setLastAnalysisHash(contentHash);
+      
     } catch (error) {
       console.error("字幕分析出错:", error);
       setError("字幕分析失败: " + (error.message || "未知错误"));
@@ -370,13 +276,7 @@ ${subtitleText}
               <span className="text-xs text-green-600 ml-2">(Cache)</span>
             }
           </span>
-          <div className="flex gap-1">
-            {['C2', 'C1', 'B2', 'B1', 'A2', 'A1'].map(level => (
-              <span key={level} className={`text-xs px-1.5 py-0.5 rounded-sm ${getDifficultyColor(level)}`} title={`${level} 级别`}>
-                {level}
-              </span>
-            ))}
-          </div>
+
         </div>
         
         {analysisResult.map((item, index) => (
@@ -394,10 +294,6 @@ ${subtitleText}
             </div>
             
             <div className="mb-2 text-gray-800 border-l-2 border-gray-300 pl-2">{item.chinese_meaning}</div>
-            
-            <div className="text-sm bg-gray-50 p-2 rounded">
-              <p className="text-gray-700">{item.chinese_english_sentence}</p>
-            </div>
             
             <div className="mt-1 text-xs text-gray-400 flex justify-between">
               <span>{item.type}</span>

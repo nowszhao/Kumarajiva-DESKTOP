@@ -23,7 +23,7 @@ function TitleBar({ userName, isLoggedIn, onLogout }) {
     <div className="app-title-bar bg-gray-100 border-b border-gray-200 select-none flex items-center py-1 px-3 drag">
       <div className="flex-1 flex">
         <div className="flex items-center ml-2">
-          <img src="/src/assets/logo.svg" className="w-5 h-5 mr-2" alt="Kumarajiva Logo" />
+          <img src="/src/assets/logo.png" className="w-5 h-5 mr-2" alt="Kumarajiva Logo" />
           <span className="text-sm font-medium">Kumarajiva</span>
         </div>
         

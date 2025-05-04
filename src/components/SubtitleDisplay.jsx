@@ -223,6 +223,8 @@ function SubtitleDisplay({ subtitleContent, currentTime, isFullscreen = false, i
   
   // 预处理字幕文本，处理长行
   const processText = (text) => {
+    return text;
+    
     try {
       if (!text) return '';
       

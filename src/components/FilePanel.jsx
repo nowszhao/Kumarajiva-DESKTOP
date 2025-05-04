@@ -127,7 +127,7 @@ function FilePanel({
   return (
     <div className="w-1/4 min-w-[260px] max-w-[320px] bg-white rounded-lg shadow-sm p-3 flex flex-col">
       <h1 className="text-lg font-bold text-center mb-2 flex justify-center items-center">
-        <img src="/src/assets/logo.svg" className="w-6 h-6 mr-2" alt="Kumarajiva Logo" />
+        <img src="/src/assets/logo.png" className="w-6 h-6 mr-2" alt="Kumarajiva Logo" />
         Kumarajiva
       </h1>
       
