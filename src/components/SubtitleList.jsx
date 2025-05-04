@@ -5,6 +5,9 @@ function SubtitleList({ subtitleContent, currentTime, onSubtitleClick }) {
   const [parsedSubtitles, setParsedSubtitles] = useState([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [parseError, setParseError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchActiveIndex, setSearchActiveIndex] = useState(-1);
   const subtitleRefs = useRef({});
   const listRef = useRef(null);
   const autoScrollingRef = useRef(false);
@@ -18,6 +21,8 @@ function SubtitleList({ subtitleContent, currentTime, onSubtitleClick }) {
         const parsed = parseAssSubtitles(subtitleContent);
         setParsedSubtitles(parsed);
         setActiveIndex(-1); // 重置当前活动字幕
+        setSearchResults([]);
+        setSearchActiveIndex(-1);
         
         // 如果内容不为空但解析结果为空，设置警告
         if (parsed.length === 0 && subtitleContent.length > 0) {
@@ -129,10 +134,66 @@ function SubtitleList({ subtitleContent, currentTime, onSubtitleClick }) {
     }
   };
   
+  // 搜索功能：根据关键词过滤字幕内容
+  useEffect(() => {
+    if (!searchTerm) {
+      setSearchResults([]);
+      setSearchActiveIndex(-1);
+      return;
+    }
+    const lower = searchTerm.toLowerCase();
+    const results = parsedSubtitles
+      .map((item, idx) => ({ idx, text: item.text }))
+      .filter(({ text }) => text && text.toLowerCase().includes(lower))
+      .map(({ idx }) => idx);
+    setSearchResults(results);
+    setSearchActiveIndex(results.length > 0 ? 0 : -1);
+  }, [searchTerm, parsedSubtitles]);
+
+  // 搜索后自动滚动到第一个匹配项
+  useEffect(() => {
+    if (searchResults.length > 0 && searchActiveIndex >= 0) {
+      const idx = searchResults[searchActiveIndex];
+      if (subtitleRefs.current[idx] && listRef.current) {
+        subtitleRefs.current[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [searchResults, searchActiveIndex]);
+
+  // 搜索框回车/上下键切换匹配项
+  const handleSearchKeyDown = (e) => {
+    if (!searchResults.length) return;
+    if (e.key === 'Enter') {
+      // 跳转到当前高亮的搜索结果
+      const idx = searchResults[searchActiveIndex];
+      if (typeof idx === 'number') {
+        handleSubtitleClick(parsedSubtitles[idx], idx);
+      }
+    } else if (e.key === 'ArrowDown') {
+      setSearchActiveIndex((prev) => (prev + 1) % searchResults.length);
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      setSearchActiveIndex((prev) => (prev - 1 + searchResults.length) % searchResults.length);
+      e.preventDefault();
+    }
+  };
+  
   // 没有字幕文件或解析有错误
   if (!parsedSubtitles || parsedSubtitles.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-gray-400 text-sm flex-col p-4">
+        {/* 搜索框也显示在顶部 */}
+        <div className="w-full mb-4 flex justify-center">
+          <input
+            type="text"
+            className="border rounded px-2 py-1 w-full max-w-md text-gray-700"
+            placeholder="搜索字幕内容..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            disabled={!subtitleContent}
+          />
+        </div>
         {parseError ? (
           <>
             <div className="text-yellow-500 font-medium mb-2">字幕解析警告</div>
@@ -154,37 +215,71 @@ function SubtitleList({ subtitleContent, currentTime, onSubtitleClick }) {
   
   // 渲染字幕列表
   return (
-    <div 
-      ref={listRef} 
-      className="h-full overflow-y-auto text-sm pb-2 px-1 subtitle-list"
-      style={{ 
-        scrollBehavior: 'smooth',
-        height: '100%',
-        minHeight: '100%',
-        display: 'block'
-      }}
-    >
-      {parsedSubtitles.map((subtitle, index) => (
-        <div
-          key={index}
-          ref={el => subtitleRefs.current[index] = el}
-          className={`p-2 mb-1 rounded-md cursor-pointer hover:bg-gray-100 ${
-            index === activeIndex ? 'active-subtitle' : ''
-          }`}
-          onClick={() => handleSubtitleClick(subtitle, index)}
-          id={`subtitle-item-${index}`}
-        >
-          <div className="text-xs text-gray-500 mb-1">
-            {formatTime(subtitle.start)} - {formatTime(subtitle.end)}
+    <div className="h-full flex flex-col">
+      {/* 搜索框 */}
+      <div className="w-full mb-2 px-1">
+        <input
+          type="text"
+          className="border rounded px-2 py-1 w-full text-gray-700"
+          placeholder="搜索字幕内容..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          onKeyDown={handleSearchKeyDown}
+        />
+        {searchTerm && (
+          <div className="text-xs text-gray-500 mt-1">
+            {searchResults.length > 0
+              ? `共${searchResults.length}条匹配，按上下键切换，回车定位`
+              : '无匹配结果'}
           </div>
-          <div
-            className="text-gray-800"
-            dangerouslySetInnerHTML={{ 
-              __html: stripHtmlExceptBr(subtitle.text) 
-            }}
-          />
-        </div>
-      ))}
+        )}
+      </div>
+      <div 
+        ref={listRef} 
+        className="h-full overflow-y-auto text-sm pb-2 px-1 subtitle-list"
+        style={{ 
+          scrollBehavior: 'smooth',
+          height: '100%',
+          minHeight: '100%',
+          display: 'block'
+        }}
+      >
+        {(searchTerm ? searchResults : parsedSubtitles.map((_, idx) => idx)).map((index, i) => {
+          const subtitle = parsedSubtitles[index];
+          if (!subtitle) return null;
+          // 搜索高亮
+          const isSearchMatch = searchResults.includes(index);
+          const isSearchActive = isSearchMatch && searchResults[searchActiveIndex] === index;
+          let textHtml = stripHtmlExceptBr(subtitle.text);
+          if (isSearchMatch && searchTerm) {
+            // 高亮关键词
+            const re = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            textHtml = textHtml.replace(re, '<mark class="bg-yellow-200">$1</mark>');
+          }
+          return (
+            <div
+              key={index}
+              ref={el => subtitleRefs.current[index] = el}
+              className={`p-2 mb-1 rounded-md cursor-pointer hover:bg-gray-100 ${
+                index === activeIndex ? 'active-subtitle' : ''
+              } ${isSearchActive ? 'ring-2 ring-yellow-400' : ''}`}
+              onClick={() => handleSubtitleClick(subtitle, index)}
+              id={`subtitle-item-${index}`}
+              style={isSearchActive ? { background: '#FEF9C3' } : {}}
+            >
+              <div className="text-xs text-gray-500 mb-1">
+                {formatTime(subtitle.start)} - {formatTime(subtitle.end)}
+              </div>
+              <div
+                className="text-gray-800"
+                dangerouslySetInnerHTML={{ 
+                  __html: textHtml 
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
