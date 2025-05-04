@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 // 导入增强的字幕解析函数
-import { parseAssSubtitles } from './subtitleUtils';
+import { parseAssSubtitles } from '../utils/subtitleUtils';
 
 // 导入字幕样式表
 import '../styles/subtitle.css';
@@ -224,89 +224,6 @@ function SubtitleDisplay({ subtitleContent, currentTime, isFullscreen = false, i
   // 预处理字幕文本，处理长行
   const processText = (text) => {
     return text;
-    
-    try {
-      if (!text) return '';
-      
-      // 如果是很长的一行，尝试在标点或固定长度处换行
-      if (text.length > 90 && !text.includes('<br>')) { // 增加长度阈值从80到90
-        // 处理中文文本（通常没有空格）
-        if (/[\u4e00-\u9fa5]/.test(text)) {
-          const charsPerLine = safeIsFullscreen ? 35 : 30; // 增加每行字符数
-          let formatted = '';
-          let currentLineLength = 0;
-          let lastBreakPoint = 0;
-          
-          for (let i = 0; i < text.length; i++) {
-            formatted += text[i];
-            currentLineLength++;
-            
-            // 标记潜在的断句点
-            const isBreakPoint = /[。？！.,!?]/.test(text[i]);
-            if (isBreakPoint) {
-              lastBreakPoint = i;
-            }
-            
-            // 只有在主要标点处换行，避免过度换行
-            if (currentLineLength >= charsPerLine) {
-              // 优先在最近的断句点换行
-              if (lastBreakPoint > 0 && i - lastBreakPoint < 10) {
-                // 回退到上一个断句点，在那里插入换行
-                formatted = formatted.substring(0, formatted.length - (i - lastBreakPoint)) + 
-                           '<br>' + 
-                           formatted.substring(formatted.length - (i - lastBreakPoint));
-                i = lastBreakPoint; // 调整当前位置
-                currentLineLength = 0;
-                lastBreakPoint = 0;
-              } else {
-                // 如果没有合适的断句点，就在当前位置换行
-                formatted += '<br>';
-                currentLineLength = 0;
-              }
-            }
-          }
-          return formatted;
-        } 
-        // 处理英文等有空格的文本
-        else if (text.includes(' ')) {
-          const words = text.split(' ');
-          let formatted = '';
-          let currentLineLength = 0;
-          const maxLineLength = safeIsFullscreen ? 85 : 70; // 基于字符数而非单词数
-          
-          for (let i = 0; i < words.length; i++) {
-            const word = words[i];
-            const wordWithSpace = i < words.length - 1 ? word + ' ' : word;
-            
-            // 计算添加这个词会使当前行到达的长度
-            const newLineLength = currentLineLength + wordWithSpace.length;
-            
-            // 如果添加这个词会超过最大长度，并且当前行不为空，则换行
-            if (newLineLength > maxLineLength && currentLineLength > 0) {
-              formatted += '<br>' + word + ' ';
-              currentLineLength = word.length + 1;
-            } else {
-              formatted += wordWithSpace;
-              currentLineLength += wordWithSpace.length;
-            }
-            
-            // 在句子结束标点后换行（但不在每个句号后都换行，避免过度换行）
-            if (/[.!?]$/.test(word) && 
-                i < words.length - 1 && 
-                currentLineLength > maxLineLength / 2) {
-              formatted += '<br>';
-              currentLineLength = 0;
-            }
-          }
-          return formatted.trim();
-        }
-      }
-      
-      return text;
-    } catch (e) {
-      console.error('处理字幕文本出错:', e);
-      return text || ''; // 返回原始文本或空字符串
-    }
   };
   
   // 根据拖动位置构建内联样式

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import SubtitleList from './SubtitleList';
 import llmService from '../utils/LlmService';
-
+import Toast from './Toast';
 
 function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
   const [activeTab, setActiveTab] = useState('subtitleList'); // 'subtitleList' or 'analysis'
@@ -12,6 +12,7 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
   const [contentHash, setContentHash] = useState(null); // 用于跟踪字幕内容变化
   const [lastAnalysisHash, setLastAnalysisHash] = useState(null); // 记录最后一次分析的内容hash
   const [usingCachedResult, setUsingCachedResult] = useState(false); // 标记是否使用缓存结果
+  const [toast, setToast] = useState(null); // { message, type }
   
   // 计算字幕内容哈希值，用于检测变化
   useEffect(() => {
@@ -34,11 +35,7 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
   // 切换标签页
   const handleTabChange = (tab) => {
     setActiveTab(tab);
-    // 只有在没有分析结果、当前不在分析过程中、有字幕内容、内容变更时才自动触发分析
-    if (tab === 'analysis' && !analysisResult && !isAnalyzing && subtitleContent && 
-        (!lastAnalysisHash || contentHash !== lastAnalysisHash)) {
-      analyzeSubtitle();
-    }
+    // 不再自动触发分析，改为手动点击按钮触发
   };
   
   // 检查缓存中是否已存在分析结果
@@ -87,52 +84,144 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
   const getCurrentSubtitleText = () => {
     if (!subtitleContent) return null;
     
+    console.log("Processing subtitle content...");
+
     try {
-      // 分割字幕行
-      const lines = subtitleContent.split('\n');
+      // 第1步: 检测字幕格式
+      const isASS = subtitleContent.includes('[Script Info]') || subtitleContent.includes('Style:') || subtitleContent.includes('Format:');
+      const isSRT = subtitleContent.includes(' --> ');
+      
+      console.log(`字幕格式检测: ${isASS ? 'ASS/SSA' : isSRT ? 'SRT' : '未知格式'}`);
+      
+      // 第2步: 根据字幕格式提取对话内容
+      let extractedText = '';
+      
+      // 处理ASS格式
+      if (isASS) {
+        // 查找和处理[Events]部分，这部分包含实际对话
+        const sections = subtitleContent.split(/\[[\w\s]+\]/);
+        let dialogueSection = '';
+        
+        // 在所有部分中查找包含"Dialogue:"的部分
+        for (const section of sections) {
+          if (section.includes('Dialogue:')) {
+            dialogueSection = section;
+            break;
+          }
+        }
+        
+        if (dialogueSection) {
+          const dialogueLines = dialogueSection
+            .split('\n')
+            .filter(line => line.includes('Dialogue:'))
+            .map(line => {
+              // ASS格式中对话内容通常在最后一个部分
+              const parts = line.split(',');
+              if (parts.length > 9) {  // 确保有足够的部分
+                // 获取最后部分的文本 (通常是第10个部分开始)
+                return parts.slice(9).join(',');
+              }
+              return '';
+            });
+          
+          extractedText = dialogueLines.join('\n');
+        } else {
+          console.log("未找到对话内容部分");
+          return null;
+        }
+      } 
+      // 处理SRT格式
+      else if (isSRT) {
+        const lines = subtitleContent.split('\n');
+        const textLines = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          
+          // 跳过时间戳和序号行
+          if (line.includes(' --> ') || /^\d+$/.test(line) || !line) {
+            continue;
+          }
+          
+          textLines.push(line);
+        }
+        
+        extractedText = textLines.join('\n');
+      }
+      // 未知格式，尝试通用提取
+      else {
+        extractedText = subtitleContent;
+      }
+      
+      // 第3步: 清理提取的文本，只保留英文内容
+      if (!extractedText) {
+        console.log("提取失败，无可处理文本");
+        return null;
+      }
+      
+      // 清理各种格式标记和特殊代码
+      extractedText = extractedText
+        .replace(/\{[^}]*\}/g, '')          // 移除花括号中的内容
+        .replace(/\\[Nn]/g, '\n')           // 替换\N和\n为实际换行
+        .replace(/<[^>]*>/g, '')            // 移除HTML标签
+        .replace(/\[[^\]]*\]/g, '')         // 移除方括号中的内容
+        .replace(/^- /gm, '')               // 移除行首的对话标记
+        .replace(/^• /gm, '')               // 移除行首的项目符号
+        .replace(/=/g, ' ')                 // 替换等号为空格
+        .replace(/^\s*-/gm, '')             // 移除可能的对话标记
+        .replace(/^\s*•/gm, '');            // 移除可能的项目符号
+      
+      // 按行处理文本，提取英文内容
+      const lines = extractedText.split('\n');
       const englishLines = [];
       
-      // 逐行处理字幕
-      for (const line of lines) {
-        // 过滤掉时间戳、标记行和纯数字行
-        if (line.trim() && 
-            !line.includes('[') && 
-            !line.includes('-->') && 
-            !/^\d+$/.test(line.trim()) && 
-            !line.match(/^\d{2}:\d{2}:\d{2}/) &&
-            !line.match(/{.*}/) &&  // 过滤掉标记语法，如 {\\an8}
-            !line.match(/^NOTE/) && // 过滤掉注释行
-            !line.match(/^WEBVTT/)) { // 过滤掉WebVTT标记
-          
-          // 移除中文字符，只保留英文和标点
-          const englishOnly = line.trim().replace(/[\u4e00-\u9fa5]/g, '').trim();
-          
-          // 确保保留有英文内容的行（至少包含一个英文单词）
-          if (englishOnly && /[a-zA-Z]{2,}/.test(englishOnly)) {
-            englishLines.push(englishOnly);
-          }
+      for (let line of lines) {
+        line = line.trim();
+        
+        if (!line) continue;
+        
+        // 检查行是否包含英文字符
+        if (!/[a-zA-Z]/.test(line)) {
+          continue;
+        }
+        
+        // 替换中文字符为空格
+        line = line.replace(/[\u4e00-\u9fa5]/g, ' ');
+        
+        // 清理因移除中文产生的多余空格
+        line = line.replace(/\s+/g, ' ').trim();
+        
+        // 确保这一行包含至少一个英文单词
+        if (/[a-zA-Z]{2,}/.test(line)) {
+          englishLines.push(line);
         }
       }
       
-      // 合并处理后的行，限制最多1000行
-      const combinedText = englishLines.slice(0, 1000).join(' ');
+      // 合并处理后的行
+      let result = englishLines.join('\n');
       
-      // 清理文本格式
-      return combinedText
-        .replace(/\s+/g, ' ')                 // 多个空格替换为单个空格
-        .replace(/\s+([.,!?:;])/g, '$1')      // 移除标点前的空格
-        .replace(/([.,!?:;])\s*/g, '$1 ')     // 确保标点后有一个空格
-        .replace(/\s*-\s*/g, ' - ')           // 规范化破折号周围的空格
-        .replace(/\s*"\s*/g, '"')             // 移除引号周围的空格
-        .replace(/"\s+/g, '" ')               // 确保右引号后有空格
-        .replace(/\s+"/g, ' "')               // 确保左引号前有空格
-        .replace(/(\.{3})\s*/g, '$1 ')        // 处理省略号
-        .replace(/\(\s*/g, '(')               // 处理左括号
-        .replace(/\s*\)/g, ')')               // 处理右括号
-        .replace(/\s{2,}/g, ' ')              // 再次确保没有多余空格
+      // 最终文本清理
+      result = result
+        .replace(/\s+([.,!?:;])/g, '$1')       // 移除标点前的空格
+        .replace(/([.,!?:;])\s*/g, '$1 ')      // 确保标点后有一个空格
+        .replace(/\s*-\s*/g, ' - ')            // 规范化破折号
+        .replace(/\(\s*/g, '(')                // 处理左括号
+        .replace(/\s*\)/g, ')')                // 处理右括号
+        .replace(/"\s+/g, '" ')                // 确保右引号后有空格
+        .replace(/\s+"/g, ' "')                // 确保左引号前有空格
+        .replace(/\s{2,}/g, ' ')               // 移除多余空格
         .trim();
+      
+      // 结果检查
+      if (!result || !/[a-zA-Z]{2,}/.test(result)) {
+        console.log("提取结果不包含有效英文内容");
+        return null;
+      }
+      
+      console.log("提取结果示例:", result.substring(0, 150) + (result.length > 150 ? "..." : ""));
+      return result;
     } catch (e) {
-      console.error('获取字幕文本错误:', e);
+      console.error('字幕文本提取错误:', e);
       return null;
     }
   };
@@ -223,10 +312,13 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
     
     if (!analysisResult) {
       return (
-        <div className="p-4 text-center text-gray-500">
-          <div>尚未分析字幕内容</div>
+        <div className="p-4 flex flex-col items-center justify-center">
+          <div className="text-center text-gray-500 mb-4">
+            <div className="mb-2 text-base">尚未分析字幕内容</div>
+            <div className="text-sm text-gray-400">点击下方按钮开始分析字幕中的英文单词和短语</div>
+          </div>
           <button 
-            className="mt-4 px-3 py-1 bg-blue-500 text-white rounded text-sm"
+            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 transition-colors text-white rounded text-sm font-medium"
             onClick={() => analyzeSubtitle()}
             disabled={!subtitleContent}
           >
@@ -260,7 +352,7 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
               </span>
             )}
             <button 
-              className="px-2 py-1 bg-blue-500 text-white rounded text-xs"
+              className="px-2 py-1 bg-blue-500 text-white rounded text-xs mr-2"
               onClick={forceReanalyze}
               title="强制重新分析"
             >
@@ -300,8 +392,11 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
               <span className="text-blue-500 cursor-pointer hover:underline" title="复制单词到剪贴板" 
                 onClick={() => {
                   navigator.clipboard.writeText(item.vocabulary)
-                    .then(() => alert(`已复制 "${item.vocabulary}" 到剪贴板`))
-                    .catch(err => console.error('复制失败:', err));
+                    .then(() => setToast({ message: `已复制 \"${item.vocabulary}\" 到剪贴板`, type: 'success' }))
+                    .catch(err => {
+                      console.error('复制失败:', err);
+                      setToast({ message: '复制失败，请重试', type: 'error' });
+                    });
                 }}
               >
                 复制
@@ -315,26 +410,63 @@ function AdvancedPanel({ subtitleContent, currentTime, onSubtitleClick }) {
   
   return (
     <div className="h-full flex flex-col advanced-panel">
-      {/* 标签页切换 */}
-      <div className="flex border-b border-gray-200 advanced-panel-tabs">
-        <button
-          className={`advanced-panel-tab ${activeTab === 'subtitleList' ? 'active' : ''}`}
-          onClick={() => handleTabChange('subtitleList')}
-        >
-          <svg className="inline-block w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-          </svg>
-          字幕列表
-        </button>
-        <button
-          className={`advanced-panel-tab ${activeTab === 'analysis' ? 'active' : ''}`}
-          onClick={() => handleTabChange('analysis')}
-        >
-          <svg className="inline-block w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
-          字幕解析
-        </button>
+      {/* Toast 通知 */}
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          duration={2000} 
+          onClose={() => setToast(null)} 
+        />
+      )}
+      {/* 标签页切换和顶部按钮区域 */}
+      <div className="flex flex-col border-b border-gray-200">
+        {/* 复制字幕按钮 */}
+        <div className="px-3 py-2 flex justify-end">
+          <button 
+            className="px-2 py-1 bg-green-500 text-white rounded text-xs"
+            onClick={() => {
+              const subtitleText = getCurrentSubtitleText();
+              if (subtitleText) {
+                navigator.clipboard.writeText(subtitleText)
+                  .then(() => {
+                    setToast({ message: '字幕英文内容已复制到剪贴板！', type: 'success' });
+                  })
+                  .catch(err => {
+                    console.error('复制字幕内容失败:', err);
+                    setToast({ message: '复制失败，请重试', type: 'error' });
+                  });
+              } else {
+                setToast({ message: '无法提取字幕内容', type: 'warning' });
+              }
+            }}
+            title="复制英文字幕内容到剪贴板"
+          >
+            复制字幕
+          </button>
+        </div>
+        
+        {/* 标签页按钮 */}
+        <div className="flex">
+          <button
+            className={`advanced-panel-tab ${activeTab === 'subtitleList' ? 'active' : ''}`}
+            onClick={() => handleTabChange('subtitleList')}
+          >
+            <svg className="inline-block w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            字幕列表
+          </button>
+          <button
+            className={`advanced-panel-tab ${activeTab === 'analysis' ? 'active' : ''}`}
+            onClick={() => handleTabChange('analysis')}
+          >
+            <svg className="inline-block w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            字幕解析
+          </button>
+        </div>
       </div>
       
       {/* 内容区域 */}

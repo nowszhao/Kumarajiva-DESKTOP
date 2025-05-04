@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { parseAssSubtitles } from './subtitleUtils';
+import { parseAssSubtitles } from '../utils/subtitleUtils';
 
 function SubtitleList({ subtitleContent, currentTime, onSubtitleClick }) {
   const [parsedSubtitles, setParsedSubtitles] = useState([]);

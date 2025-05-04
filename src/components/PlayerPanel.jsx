@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import SubtitleDisplay from './SubtitleDisplay';
 import AdvancedPanel from './AdvancedPanel';
-import { parseAssSubtitles } from './subtitleUtils';
+import { parseAssSubtitles } from '../utils/subtitleUtils';
 import '../styles/subtitle.css';
 
 // 添加全局调试日志函数
@@ -33,6 +33,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSubtitleTip, setShowSubtitleTip] = useState(false);
   const [isLoopingSubtitle, setIsLoopingSubtitle] = useState(false);
+  const [subtitleLoopCount, setSubtitleLoopCount] = useState(0);
+  const [currentLoopingSubtitleIndex, setCurrentLoopingSubtitleIndex] = useState(-1);
   const [parsedSubtitles, setParsedSubtitles] = useState([]);
   const [currentSubtitleIndex, setCurrentSubtitleIndex] = useState(-1);
   const [isPaused, setIsPaused] = useState(false);
@@ -43,6 +45,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   const lastPlayedTimeRef = useRef(0);
   const playAttemptCountRef = useRef(0);
   const [statusMessage, setStatusMessage] = useState('');
+  const [showKeyboardShortcutTip, setShowKeyboardShortcutTip] = useState(false);
   // 字幕模糊状态 - 使用明确的布尔默认值false
   const [isSubtitleBlurred, setIsSubtitleBlurred] = useState(() => {
     try {
@@ -407,11 +410,22 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       console.log('[DEBUG] 字幕循环状态:', isLoopingSubtitle ? '已启用' : '已禁用');
     }
     
-    // 如果未启用循环，直接退出
-    if (!isLoopingSubtitle) return;
+    // 如果未启用循环，重置循环计数并直接退出
+    if (!isLoopingSubtitle) {
+      setSubtitleLoopCount(0);
+      setCurrentLoopingSubtitleIndex(-1);
+      return;
+    }
     
     // 保存当前循环的字幕索引，用于防止在循环过程中切换到其他字幕
     const lockedSubtitleIndex = currentSubtitleIndex;
+    
+    // 如果切换到新的字幕，重置计数
+    if (lockedSubtitleIndex !== currentLoopingSubtitleIndex) {
+      setSubtitleLoopCount(0);
+      setCurrentLoopingSubtitleIndex(lockedSubtitleIndex);
+      console.log(`[DEBUG] 检测到字幕切换，重置循环计数，新字幕索引: #${lockedSubtitleIndex}`);
+    }
     
     // 记录要循环的字幕信息，增加鲁棒性
     let loopSubtitle = null;
@@ -449,7 +463,15 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
             console.log('[DEBUG] 循环字幕: 重置到开始位置');
             video.currentTime = loopSubtitle.start / 1000;
             
+            // 增加循环计数
+            setSubtitleLoopCount(prevCount => {
+              const newCount = prevCount + 1;
+              console.log(`[DEBUG] 字幕循环次数: ${newCount}`);
+              return newCount;
+            });
+            
             // 重要：强制更新当前字幕索引，防止被自动更新机制切换
+            // 始终锁定在当前循环字幕，不会自动跳转到下一个字幕
             if (currentSubtitleIndex !== lockedSubtitleIndex) {
               setCurrentSubtitleIndex(lockedSubtitleIndex);
             }
@@ -467,8 +489,40 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     return () => {
       console.log('[DEBUG] 清理字幕循环定时器');
       clearInterval(intervalId);
+      
+      // 恢复正常播放速度
+      try {
+        if (videoRef.current) {
+          videoRef.current.playbackRate = 1.0;
+        }
+      } catch (e) {
+        console.error('[ERROR] 恢复播放速度失败:', e);
+      }
     };
-  }, [isLoopingSubtitle, currentSubtitleIndex, parsedSubtitles]);
+  }, [isLoopingSubtitle, currentSubtitleIndex, parsedSubtitles, currentLoopingSubtitleIndex]);
+
+  // 根据循环次数动态调整播放速度
+  useEffect(() => {
+    // 只有在循环开启时才调整播放速度
+    if (!isLoopingSubtitle || !videoRef.current) return;
+    
+    try {
+      const video = videoRef.current;
+      
+      if (subtitleLoopCount >= 10) {
+        video.playbackRate = 0.5;
+        console.log('[DEBUG] 循环超过10次，降低播放速度为0.5倍');
+      } else if (subtitleLoopCount >= 5) {
+        video.playbackRate = 0.75;
+        console.log('[DEBUG] 循环超过5次，降低播放速度为0.75倍');
+      } else {
+        video.playbackRate = 1.0;
+        console.log('[DEBUG] 循环少于5次，保持正常播放速度');
+      }
+    } catch (e) {
+      console.error('[ERROR] 调整播放速度失败:', e);
+    }
+  }, [subtitleLoopCount, isLoopingSubtitle]);
 
   // 显示字幕提示
   useEffect(() => {
@@ -484,6 +538,21 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       return () => clearTimeout(timer);
     }
   }, [subtitleContent]);
+
+  // 显示键盘快捷键提示
+  useEffect(() => {
+    if (currentVideo && !localStorage.getItem('keyboard-shortcut-tip-shown')) {
+      setShowKeyboardShortcutTip(true);
+      
+      // 8秒后自动关闭提示
+      const timer = setTimeout(() => {
+        setShowKeyboardShortcutTip(false);
+        localStorage.setItem('keyboard-shortcut-tip-shown', 'true');
+      }, 8000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentVideo]);
 
   useEffect(() => {
     debug('视频组件挂载或更新', { currentVideo: currentVideo?.name });
@@ -1050,6 +1119,16 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         setStatusMessage('字幕循环已禁用');
         setTimeout(() => setStatusMessage(''), 3000);
         setIsLoopingSubtitle(false);
+        
+        // 重置循环计数和当前循环字幕索引
+        setSubtitleLoopCount(0);
+        setCurrentLoopingSubtitleIndex(-1);
+        
+        // 恢复正常播放速度
+        if (videoRef.current) {
+          videoRef.current.playbackRate = 1.0;
+        }
+        
         return;
       }
       
@@ -1119,6 +1198,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       
       const video = videoRef.current;
       video.pause();
+      
       
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1206,7 +1286,6 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
   
   // 切换到下一个字幕
   const goToNextSubtitle = () => {
-
     console.log('切换到下一个字幕');
 
     try {
@@ -1217,6 +1296,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       
       const video = videoRef.current;
       video.pause();
+      
 
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1295,6 +1375,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           console.warn(`[WARN] 字幕跳转时间无效: ${targetTime}`);
         }
       }
+
 
       video.play();
     } catch (err) {
@@ -1586,6 +1667,45 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     return isSubtitleBlurred === true;
   };
 
+  // 添加键盘快捷键支持
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 检查视频播放器是否已加载
+      if (!videoRef.current || !parsedSubtitles || !Array.isArray(parsedSubtitles) || !parsedSubtitles.length) {
+        return;
+      }
+      
+      try {
+        // Ctrl+N: 下一个字幕
+        if (e.ctrlKey && (e.key === 'n' || e.key === 'N')) {
+          e.preventDefault(); // 阻止默认行为（例如，在浏览器中打开新窗口）
+          console.log('[DEBUG] 检测到快捷键: Ctrl+N, 跳转到下一个字幕');
+          
+          goToNextSubtitle();
+          
+        }
+        
+        // Ctrl+B: 上一个字幕
+        if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
+          e.preventDefault(); // 阻止默认行为
+          console.log('[DEBUG] 检测到快捷键: Ctrl+B, 跳转到上一个字幕');
+          
+           goToPreviousSubtitle();
+        }
+      } catch (err) {
+        console.error('[ERROR] 键盘快捷键处理失败:', err);
+      }
+    };
+    
+    // 添加键盘事件监听器
+    window.addEventListener('keydown', handleKeyDown);
+    
+    // 清理函数
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [parsedSubtitles, currentSubtitleIndex]); // 添加currentSubtitleIndex作为依赖
+
   return (
     <div className="flex-1 bg-white rounded-lg shadow-sm p-3 flex flex-col min-h-0">
       {currentVideo ? (
@@ -1605,7 +1725,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                 className="btn btn-xs btn-ghost"
                 onClick={toggleSubtitleList}
               >
-                {showSubtitleList ? '隐藏字幕列表' : '显示字幕列表'}
+                {showSubtitleList ? '隐藏字幕' : '显示字幕'}
               </button>
             )}
           </div>
@@ -1617,6 +1737,13 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
               {showSubtitleTip && (
                 <div className="absolute top-10 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg z-30 text-sm text-center whitespace-nowrap">
                   提示: 字幕可以拖动！点击并拖拽字幕可以调整位置，双击可以重置位置
+                </div>
+              )}
+              
+              {/* 键盘快捷键提示 */}
+              {showKeyboardShortcutTip && (
+                <div className="absolute top-24 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-70 text-white px-4 py-2 rounded-lg z-30 text-sm text-center whitespace-nowrap">
+                  提示: 使用键盘快捷键 Ctrl+N (下一句) 和 Ctrl+B (上一句) 快速导航字幕
                 </div>
               )}
               
@@ -1647,16 +1774,20 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                         onClick={toggleSubtitleLoop}
                         title="字幕循环播放"
                       >
-                        循环: {isLoopingSubtitle ? '开' : '关'}
+                        循环: {isLoopingSubtitle ? `开 #${currentLoopingSubtitleIndex + 1} (${subtitleLoopCount}次${
+                          subtitleLoopCount >= 10 ? ' 0.5x' : 
+                          subtitleLoopCount >= 5 ? ' 0.75x' : ''
+                        })` : '关'}
                       </button>
                     </div>
                     
                     <div className="subtitle-controls flex items-center space-x-2 mr-3">
                       <button
                         onClick={goToPreviousSubtitle}
-                        title="上一句字幕"
+                        title="上一句字幕 (Ctrl+B)"
+                        className="flex flex-col items-center"
                       >
-                        ⏮
+                        <span>⏮</span>
                       </button>
                       
                       <button
@@ -1668,9 +1799,10 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                       
                       <button
                         onClick={goToNextSubtitle}
-                        title="下一句字幕"
+                        title="下一句字幕 (Ctrl+N)"
+                        className="flex flex-col items-center"
                       >
-                        ⏭
+                        <span>⏭</span>
                       </button>
                       
                       <button
@@ -1690,15 +1822,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                   </>
                 )}
                 
-                {/* 视频控制按钮 */}
-                <button
-                  className="ml-1 px-1 bg-red-500 rounded hover:bg-red-600"
-                  onClick={resetPlayer}
-                  title="重置视频"
-                >
-                  重置
-                </button>
-                
+                {/* 视频控制按钮 */}                
                 <button
                   className="ml-1 px-1 bg-blue-500 rounded hover:bg-blue-600"
                   onClick={requestFullscreen}
@@ -1706,15 +1830,6 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                 >
                   全屏
                 </button>
-                
-                {subtitleContent && (
-                  <button
-                    className="ml-1 px-1 bg-yellow-500 rounded hover:bg-yellow-600"
-                    title="字幕可以拖动！点击并拖拽字幕可以调整位置，双击可以重置位置"
-                  >
-                    字幕提示
-                  </button>
-                )}
               </div>
             
               {/* 状态消息显示 */}
@@ -1793,7 +1908,6 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
               <div className="w-5/12 min-w-[280px] max-w-[400px] subtitle-container border border-gray-200 rounded overflow-hidden">
                 <div className="subtitle-list-header bg-gray-100 px-3 py-2 border-b border-gray-200 text-sm font-medium flex items-center justify-between">
                   <span>高级功能区</span>
-                  <span className="text-xs text-gray-500">(字幕列表 / 字幕解析)</span>
                 </div>
                 <div className="subtitle-list-body bg-gray-50 flex-1 h-full overflow-hidden">
                   <AdvancedPanel 
