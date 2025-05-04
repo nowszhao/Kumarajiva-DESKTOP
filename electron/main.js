@@ -83,6 +83,111 @@ const tokenManager = {
   }
 };
 
+// 播放历史记录管理
+const PLAY_HISTORY_PATH = path.join(app.getPath('userData'), 'play_history.json');
+const MAX_HISTORY_ITEMS = 50; // 最多保存的播放记录数
+
+const playHistoryManager = {
+  // 获取播放历史
+  getPlayHistory() {
+    try {
+      if (!fs.existsSync(PLAY_HISTORY_PATH)) {
+        return [];
+      }
+      
+      const fileContent = fs.readFileSync(PLAY_HISTORY_PATH, 'utf8');
+      const history = JSON.parse(fileContent);
+      return Array.isArray(history) ? history : [];
+    } catch (error) {
+      console.error('Error reading play history:', error);
+      return [];
+    }
+  },
+  
+  // 添加或更新播放记录
+  savePlayHistory(videoInfo) {
+    try {
+      if (!videoInfo || !videoInfo.file_id) {
+        return false;
+      }
+      
+      let history = this.getPlayHistory();
+      
+      // 查找是否已存在该视频的播放记录
+      const existingIndex = history.findIndex(item => item.file_id === videoInfo.file_id);
+      
+      if (existingIndex >= 0) {
+        // 更新已有记录
+        history[existingIndex] = {
+          ...history[existingIndex],
+          ...videoInfo,
+          last_played_at: Date.now()
+        };
+      } else {
+        // 添加新记录
+        history.unshift({
+          ...videoInfo,
+          last_played_at: Date.now()
+        });
+        
+        // 限制记录数量
+        if (history.length > MAX_HISTORY_ITEMS) {
+          history = history.slice(0, MAX_HISTORY_ITEMS);
+        }
+      }
+      
+      // 保存到文件
+      fs.writeFileSync(PLAY_HISTORY_PATH, JSON.stringify(history), 'utf8');
+      console.log('Play history saved successfully');
+      return true;
+    } catch (error) {
+      console.error('Error saving play history:', error);
+      return false;
+    }
+  },
+  
+  // 更新播放进度
+  updatePlayProgress(fileId, playCursor) {
+    try {
+      if (!fileId || !playCursor) {
+        return false;
+      }
+      
+      const history = this.getPlayHistory();
+      const existingIndex = history.findIndex(item => item.file_id === fileId);
+      
+      if (existingIndex >= 0) {
+        history[existingIndex].play_cursor = playCursor;
+        history[existingIndex].last_played_at = Date.now();
+        
+        // 保存到文件
+        fs.writeFileSync(PLAY_HISTORY_PATH, JSON.stringify(history), 'utf8');
+        console.log(`Play progress updated for ${fileId}: ${playCursor}`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error updating play progress:', error);
+      return false;
+    }
+  },
+  
+  // 清除播放历史
+  clearPlayHistory() {
+    try {
+      if (fs.existsSync(PLAY_HISTORY_PATH)) {
+        fs.unlinkSync(PLAY_HISTORY_PATH);
+        console.log('Play history cleared');
+      }
+      return true;
+    } catch (error) {
+      console.error('Error clearing play history:', error);
+      return false;
+    }
+  }
+};
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -369,7 +474,8 @@ ipcMain.handle('get-video-url', async (event, { accessToken, driveId, fileId }) 
       {
         drive_id: driveId,
         file_id: fileId,
-        category: 'live_transcoding'
+        category: 'live_transcoding',
+        with_play_cursor: true
       }, 
       { 'Authorization': `Bearer ${accessToken}` }
     );
@@ -377,6 +483,22 @@ ipcMain.handle('get-video-url', async (event, { accessToken, driveId, fileId }) 
   } catch (error) {
     console.error('Video URL error:', error);
     return { error: true, message: 'Failed to get video URL' };
+  }
+});
+
+// 添加获取最近播放列表的函数
+ipcMain.handle('get-recent-play-list', async (event, { accessToken }) => {
+  try {
+    const response = await makeRequest('POST', `${API_BASE}/adrive/v1.1/openFile/video/recentList`, 
+      {
+        video_thumbnail_width: 300 // 设置缩略图宽度
+      }, 
+      { 'Authorization': `Bearer ${accessToken}` }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Recent play list error:', error);
+    return { error: true, message: 'Failed to get recent play list' };
   }
 });
 
@@ -514,6 +636,50 @@ ipcMain.handle('get-subtitle-content', async (event, { accessToken, driveId, fil
 ipcMain.handle('proxy-video-stream', async (event, url) => {
   // 直接返回原始URL，使用内置网络模块绕过CORS
   return { proxyUrl: url };
+});
+
+// 获取播放历史记录
+ipcMain.handle('get-play-history', async () => {
+  try {
+    const history = playHistoryManager.getPlayHistory();
+    return { success: true, items: history };
+  } catch (error) {
+    console.error('Get play history error:', error);
+    return { error: true, message: 'Failed to get play history' };
+  }
+});
+
+// 保存播放记录
+ipcMain.handle('save-play-history', async (event, videoInfo) => {
+  try {
+    const success = playHistoryManager.savePlayHistory(videoInfo);
+    return { success };
+  } catch (error) {
+    console.error('Save play history error:', error);
+    return { error: true, message: 'Failed to save play history' };
+  }
+});
+
+// 更新播放进度
+ipcMain.handle('update-play-progress', async (event, { fileId, playCursor }) => {
+  try {
+    const success = playHistoryManager.updatePlayProgress(fileId, playCursor);
+    return { success };
+  } catch (error) {
+    console.error('Update play progress error:', error);
+    return { error: true, message: 'Failed to update play progress' };
+  }
+});
+
+// 清除播放历史
+ipcMain.handle('clear-play-history', async () => {
+  try {
+    const success = playHistoryManager.clearPlayHistory();
+    return { success };
+  } catch (error) {
+    console.error('Clear play history error:', error);
+    return { error: true, message: 'Failed to clear play history' };
+  }
 });
 
 // 添加窗口控制事件监听

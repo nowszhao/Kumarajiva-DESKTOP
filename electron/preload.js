@@ -40,6 +40,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVideoUrl: (accessToken, driveId, fileId) => 
     ipcRenderer.invoke('get-video-url', { accessToken, driveId, fileId }),
   
+  // 获取最近播放列表
+  getRecentPlayList: (accessToken) => 
+    ipcRenderer.invoke('get-recent-play-list', { accessToken }),
+  
+  // 本地播放历史管理
+  getPlayHistory: () => ipcRenderer.invoke('get-play-history'),
+  savePlayHistory: (videoInfo) => ipcRenderer.invoke('save-play-history', videoInfo),
+  updatePlayProgress: (fileId, playCursor) => 
+    ipcRenderer.invoke('update-play-progress', { fileId, playCursor }),
+  clearPlayHistory: () => ipcRenderer.invoke('clear-play-history'),
+  
   // 字幕文件获取
   getSubtitleContent: (accessToken, driveId, fileId) => 
     ipcRenderer.invoke('get-subtitle-content', { accessToken, driveId, fileId }),

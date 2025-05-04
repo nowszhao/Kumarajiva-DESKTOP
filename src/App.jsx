@@ -201,14 +201,22 @@ function App() {
       setFiles(result.items || []);
       setCurrentFolderId(folderId);
       setIsLoading(false);
+      
+      // 返回当前文件夹的信息，用于更新面包屑
+      return {
+        id: folderId,
+        items: result.items || []
+      };
     } catch (e) {
       setIsLoading(false);
       console.error('File list loading failed', e);
+      return null;
     }
   };
 
   const navigateToFolder = (folderId) => {
-    setFolderStack([...folderStack, currentFolderId]);
+    // 不再需要手动管理导航历史，由面包屑组件负责
+    // setFolderStack([...folderStack, currentFolderId]);
     loadFileList(accessToken, driveId, folderId);
   };
 
@@ -235,10 +243,29 @@ function App() {
       const url = (sd && sd.url) || (ld && ld.url) || '';
       
       if (url) {
-        setCurrentVideo({
+        // 获取播放进度
+        const playCursor = result.play_cursor || '0';
+        
+        // 创建视频对象
+        const videoInfo = {
           url,
           name: fileName,
-          fileId
+          fileId,
+          file_id: fileId, // 用于历史记录
+          drive_id: driveId,
+          duration: '0', // 初始化，会在播放时更新
+          play_cursor: playCursor
+        };
+        
+        setCurrentVideo(videoInfo);
+        
+        // 保存播放历史
+        await electronAPI.savePlayHistory({
+          file_id: fileId,
+          name: fileName,
+          drive_id: driveId,
+          play_cursor: playCursor,
+          duration: '0' // 初始化，会在播放时更新
         });
         
         // 清除之前的字幕
@@ -251,6 +278,33 @@ function App() {
       }
     } catch (e) {
       console.error('Failed to get video URL', e);
+    }
+  };
+
+  // 更新播放进度
+  const updatePlayProgress = async (fileId, currentTime, duration) => {
+    if (!fileId || currentTime === undefined) return;
+    
+    try {
+      // 转换为字符串格式，保持与API返回格式一致
+      const playCursor = String(currentTime.toFixed(3));
+      const durationStr = String(duration.toFixed(3));
+      
+      // 更新本地播放进度
+      await electronAPI.updatePlayProgress(fileId, playCursor);
+      
+      // 如果有总时长，也一并更新
+      if (duration) {
+        await electronAPI.savePlayHistory({
+          file_id: fileId,
+          duration: durationStr,
+          play_cursor: playCursor
+        });
+      }
+      
+      console.log(`播放进度已更新: ${playCursor}/${durationStr}`);
+    } catch (e) {
+      console.error('Failed to update play progress', e);
     }
   };
 
@@ -390,11 +444,14 @@ function App() {
             onSubtitleClick={loadSubtitle}
             onSearch={searchFiles}
             userName={userName}
+            accessToken={accessToken}
+            driveId={driveId}
           />
           <PlayerPanel 
             currentVideo={currentVideo}
             currentSubtitle={currentSubtitle}
             subtitleContent={subtitleContent}
+            onUpdatePlayProgress={updatePlayProgress}
           />
         </div>
       ) : (

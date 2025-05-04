@@ -14,9 +14,10 @@ const isElectron = () => {
   return window.navigator && window.navigator.userAgent.includes('Electron');
 };
 
-function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
+function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent, onUpdatePlayProgress }) {
   const videoRef = useRef(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
   const [showSubtitleList, setShowSubtitleList] = useState(true);
   const [videoStatus, setVideoStatus] = useState('idle'); // idle, loading, playing, error
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -42,6 +43,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     }
   });
   const audioRef = useRef(null);
+  const progressUpdateTimerRef = useRef(null);
 
   // Load component settings from localStorage on mount
   useEffect(() => {
@@ -61,6 +63,100 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       console.error('[ERROR] Failed to read subtitle settings:', e);
     }
   }, []);
+
+  // Handle video duration update
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      setVideoDuration(videoRef.current.duration);
+      
+      // If video has initial play cursor, seek to it
+      if (currentVideo && currentVideo.play_cursor) {
+        try {
+          const seekTime = parseFloat(currentVideo.play_cursor);
+          if (!isNaN(seekTime) && seekTime > 0) {
+            // 如果播放进度接近视频结尾 (小于30秒)，则从头播放
+            if (seekTime < videoRef.current.duration - 30) {
+              console.log(`Seeking to saved position: ${seekTime}s`);
+              videoRef.current.currentTime = seekTime;
+            } else {
+              console.log(`Saved position too close to end (${seekTime}s), starting from beginning`);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to seek to saved position:', e);
+        }
+      }
+    }
+  };
+
+  // Save play progress periodically
+  useEffect(() => {
+    // Clear the timer when component unmounts or video changes
+    const clearProgressTimer = () => {
+      if (progressUpdateTimerRef.current) {
+        clearInterval(progressUpdateTimerRef.current);
+        progressUpdateTimerRef.current = null;
+      }
+    };
+    
+    // Start timer when we have a video playing
+    if (currentVideo && videoRef.current && onUpdatePlayProgress && !isPaused) {
+      clearProgressTimer(); // Clear any existing timer
+      
+      // Update progress every 10 seconds
+      progressUpdateTimerRef.current = setInterval(() => {
+        const currentTimeValue = videoRef.current?.currentTime;
+        const durationValue = videoRef.current?.duration;
+        
+        if (currentTimeValue && durationValue && currentVideo.fileId) {
+          onUpdatePlayProgress(currentVideo.fileId, currentTimeValue, durationValue);
+        }
+      }, 10000); // 10 seconds interval
+      
+      console.log('Started play progress tracking');
+    } else {
+      clearProgressTimer();
+    }
+    
+    return clearProgressTimer;
+  }, [currentVideo, isPaused, onUpdatePlayProgress]);
+
+  // Save progress when video stops playing
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && currentVideo && videoRef.current) {
+        // Save progress when user leaves the page
+        onUpdatePlayProgress?.(
+          currentVideo.fileId, 
+          videoRef.current.currentTime, 
+          videoRef.current.duration
+        );
+      }
+    };
+    
+    // Save progress when video unloads or component unmounts
+    const saveProgressOnUnload = () => {
+      if (currentVideo && videoRef.current) {
+        onUpdatePlayProgress?.(
+          currentVideo.fileId, 
+          videoRef.current.currentTime, 
+          videoRef.current.duration
+        );
+      }
+    };
+    
+    // Add event listeners
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', saveProgressOnUnload);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', saveProgressOnUnload);
+      
+      // Also save progress when component unmounts
+      saveProgressOnUnload();
+    };
+  }, [currentVideo, onUpdatePlayProgress]);
 
   // Show subtitle tip
   useEffect(() => {
@@ -669,6 +765,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                       autoPlay
                       playsInline
                       data-subtitle-draggable="true"
+                      onLoadedMetadata={handleLoadedMetadata}
                       style={{
                         minHeight: '300px',
                         maxHeight: '70vh',
