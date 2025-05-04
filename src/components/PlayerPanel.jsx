@@ -4,6 +4,7 @@ import SubtitleDisplay from './SubtitleDisplay';
 import AdvancedPanel from './AdvancedPanel';
 import { parseAssSubtitles } from '../utils/subtitleUtils';
 import '../styles/subtitle.css';
+import ntMp3 from '../assets/nt.mp3';
 
 // 添加全局调试日志函数
 const debug = (message, data) => {
@@ -58,6 +59,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       return false;
     }
   });
+  const audioRef = useRef(null);
 
   // 组件加载时，从localStorage恢复字幕循环状态和模糊状态
   useEffect(() => {
@@ -175,6 +177,12 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       return;
     }
     
+    // 如果正在循环字幕，并且已经锁定了特定字幕，则不要更新索引
+    if (isLoopingSubtitle && currentLoopingSubtitleIndex >= 0) {
+      // 保持使用当前循环的字幕索引
+      return;
+    }
+    
     const currentMs = currentTime * 1000;
     
     // 对大型字幕数据使用高效率查找方法
@@ -251,7 +259,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     if (foundIndex !== currentSubtitleIndex) {
       setCurrentSubtitleIndex(foundIndex);
     }
-  }, [currentTime, parsedSubtitles, currentSubtitleIndex]);
+  }, [currentTime, parsedSubtitles, currentSubtitleIndex, isLoopingSubtitle, currentLoopingSubtitleIndex]);
   
   // 监控字幕循环
   useEffect(() => {
@@ -269,6 +277,13 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     
     // 保存当前循环的字幕索引，用于防止在循环过程中切换到其他字幕
     const lockedSubtitleIndex = currentSubtitleIndex;
+    
+    // 如果当前索引无效，无法开始循环
+    if (lockedSubtitleIndex < 0 || !parsedSubtitles || !Array.isArray(parsedSubtitles) || 
+        lockedSubtitleIndex >= parsedSubtitles.length) {
+      console.warn('[WARN] 要循环的字幕无效或不存在，无法启用循环');
+      return;
+    }
     
     // 如果切换到新的字幕，重置计数
     if (lockedSubtitleIndex !== currentLoopingSubtitleIndex) {
@@ -303,28 +318,35 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       try {
         const video = videoRef.current;
         if (!video || video.paused) return;
-        
         const currentMs = video.currentTime * 1000;
+        
+        // 重要：在每次检查中，强制保持当前字幕索引，防止自动切换
+        if (currentSubtitleIndex !== lockedSubtitleIndex) {
+          setCurrentSubtitleIndex(lockedSubtitleIndex);
+        }
         
         // 检测是否播放超出了当前循环字幕的范围
         if (currentMs < loopSubtitle.start || currentMs > loopSubtitle.end) {
           try {
-            // 重置到字幕开始时间
-            console.log('[DEBUG] 循环字幕: 重置到开始位置');
-            video.currentTime = loopSubtitle.start / 1000;
-            
-            // 增加循环计数
-            setSubtitleLoopCount(prevCount => {
-              const newCount = prevCount + 1;
-              console.log(`[DEBUG] 字幕循环次数: ${newCount}`);
-              return newCount;
-            });
-            
-            // 重要：强制更新当前字幕索引，防止被自动更新机制切换
-            // 始终锁定在当前循环字幕，不会自动跳转到下一个字幕
-            if (currentSubtitleIndex !== lockedSubtitleIndex) {
-              setCurrentSubtitleIndex(lockedSubtitleIndex);
+            // 新增: 字幕循环结束，先暂停视频，播放nt.mp3，2秒后再跳回字幕起点
+            video.pause();
+            if (audioRef.current) {
+              audioRef.current.currentTime = 0;
+              audioRef.current.play();
             }
+            setTimeout(() => {
+              video.currentTime = loopSubtitle.start / 1000;
+              video.play();
+              setSubtitleLoopCount(prevCount => {
+                const newCount = prevCount + 1;
+                console.log(`[DEBUG] 字幕循环次数: ${newCount}`);
+                return newCount;
+              });
+              // 重要：强制更新当前字幕索引，防止被自动更新机制切换
+              if (currentSubtitleIndex !== lockedSubtitleIndex) {
+                setCurrentSubtitleIndex(lockedSubtitleIndex);
+              }
+            }, 1000);
           } catch (e) {
             console.error('[ERROR] 字幕循环跳转失败:', e);
           }
@@ -333,7 +355,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         // 捕获错误但不执行复杂处理
         console.error('[ERROR] 字幕循环处理错误:', e);
       }
-    }, 100); // 降低间隔以提高响应性，从250ms到100ms
+    }, 100);
     
     // 简单的清理函数
     return () => {
@@ -871,6 +893,58 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       debug(`请求跳转到 ${seconds} 秒`);
       const video = videoRef.current;
       
+      // 如果跳转是由外部字幕列表触发的，可能需要调整循环状态
+      // 检查是否当前正在循环而且是点击字幕列表导致的跳转
+      const isSubtitleListJump = true; // 假设所有外部跳转都来自字幕列表
+      const wasLooping = isLoopingSubtitle;
+      let targetSubtitleIndex = -1;
+      
+      // 尝试找到跳转时间点对应的字幕索引
+      if (parsedSubtitles && Array.isArray(parsedSubtitles) && parsedSubtitles.length > 0) {
+        const targetMs = seconds * 1000;
+        
+        // 使用二分查找快速定位字幕
+        if (parsedSubtitles.length > 100) {
+          let low = 0;
+          let high = parsedSubtitles.length - 1;
+          
+          while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const subtitle = parsedSubtitles[mid];
+            
+            if (!subtitle || typeof subtitle.start !== 'number') {
+              continue;
+            }
+            
+            if (targetMs >= subtitle.start && targetMs <= subtitle.end) {
+              targetSubtitleIndex = mid;
+              break;
+            } else if (subtitle.start > targetMs) {
+              high = mid - 1;
+            } else {
+              low = mid + 1;
+            }
+          }
+        } else {
+          // 对于小数据量使用线性查找
+          for (let i = 0; i < parsedSubtitles.length; i++) {
+            const subtitle = parsedSubtitles[i];
+            if (subtitle && typeof subtitle.start === 'number' &&
+                targetMs >= subtitle.start && targetMs <= subtitle.end) {
+              targetSubtitleIndex = i;
+              break;
+            }
+          }
+        }
+      }
+      
+      // 如果正在循环，且是外部跳转，暂时禁用循环
+      if (wasLooping && isSubtitleListJump) {
+        // 先临时禁用循环
+        setIsLoopingSubtitle(false);
+        setCurrentLoopingSubtitleIndex(-1);
+      }
+      
       // 记录视频当前状态
       debug("视频跳转前状态", {
         readyState: video.readyState,
@@ -888,6 +962,11 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           video.currentTime = seconds;
           debug(`直接跳转到 ${seconds} 秒成功`);
           
+          // 手动更新字幕索引
+          if (targetSubtitleIndex >= 0) {
+            setCurrentSubtitleIndex(targetSubtitleIndex);
+          }
+          
           // 如果视频暂停中，尝试播放
           if (video.paused) {
             debug("视频暂停中，尝试播放");
@@ -896,6 +975,17 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
             }).catch(e => {
               error("跳转后播放失败", e);
             });
+          }
+          
+          // 如果之前在循环，跳转后重新启用循环，但使用新的字幕索引
+          if (wasLooping && isSubtitleListJump && targetSubtitleIndex >= 0) {
+            // 短暂延迟后再启用循环，确保字幕索引已正确更新
+            setTimeout(() => {
+              setCurrentLoopingSubtitleIndex(targetSubtitleIndex);
+              setIsLoopingSubtitle(true);
+              // 重置循环计数
+              setSubtitleLoopCount(0);
+            }, 100);
           }
         } catch (e) {
           error("直接跳转失败", e);
@@ -918,6 +1008,11 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                 video.currentTime = seconds;
                 debug(`延迟后跳转到 ${seconds} 秒成功`);
                 
+                // 手动更新字幕索引
+                if (targetSubtitleIndex >= 0) {
+                  setCurrentSubtitleIndex(targetSubtitleIndex);
+                }
+                
                 // 如果视频暂停中，尝试播放
                 if (video.paused) {
                   debug("视频暂停中，尝试播放");
@@ -926,6 +1021,17 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
                   }).catch(e => {
                     error("跳转后播放失败", e);
                   });
+                }
+                
+                // 如果之前在循环，跳转后重新启用循环，但使用新的字幕索引
+                if (wasLooping && isSubtitleListJump && targetSubtitleIndex >= 0) {
+                  // 短暂延迟后再启用循环，确保字幕索引已正确更新
+                  setTimeout(() => {
+                    setCurrentLoopingSubtitleIndex(targetSubtitleIndex);
+                    setIsLoopingSubtitle(true);
+                    // 重置循环计数
+                    setSubtitleLoopCount(0);
+                  }, 100);
                 }
               } catch (delayErr) {
                 error("延迟跳转失败", delayErr);
@@ -1049,6 +1155,12 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       const video = videoRef.current;
       video.pause();
       
+      // 保存当前循环状态
+      const wasLooping = isLoopingSubtitle;
+      
+      // 强制禁用循环，解除对当前字幕的锁定
+      setIsLoopingSubtitle(false);
+      setCurrentLoopingSubtitleIndex(-1); // 重置锁定的索引
       
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1122,12 +1234,36 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         // 安全检查 - 确保跳转时间有效
         if (!isNaN(targetTime) && targetTime >= 0 && targetTime < videoRef.current.duration) {
           console.log(`[DEBUG] 跳转到上一个字幕: #${targetIndex}, 时间: ${targetTime}秒`);
+          
+          // 更新当前字幕索引，在跳转前手动设置
+          setCurrentSubtitleIndex(targetIndex);
+          
+          // 跳转到目标字幕时间
           seekToTime(targetTime);
         } else {
           console.warn(`[WARN] 字幕跳转时间无效: ${targetTime}`);
         }
       }
 
+      // 重新启用循环（如果之前是启用的）
+      // 但要使用新的字幕索引作为循环目标
+      if (wasLooping) {
+        // 短暂延迟后再启用循环，确保字幕索引已正确更新
+        setTimeout(() => {
+          // 为新字幕设置循环
+          setCurrentLoopingSubtitleIndex(targetIndex);
+          setIsLoopingSubtitle(true);
+          
+          // 重置循环计数为0，因为切换到了新字幕
+          setSubtitleLoopCount(0);
+          
+          // 重置播放速度为正常
+          if (videoRef.current) {
+            videoRef.current.playbackRate = 1.0;
+          }
+        }, 100);
+      }
+      
       video.play();
     } catch (err) {
       console.error('[ERROR] 切换到上一个字幕失败:', err);
@@ -1146,7 +1282,13 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
       
       const video = videoRef.current;
       video.pause();
+      
+      // 保存当前循环状态
+      const wasLooping = isLoopingSubtitle;
+      
+      // 强制禁用循环，解除对当前字幕的锁定
       setIsLoopingSubtitle(false);
+      setCurrentLoopingSubtitleIndex(-1); // 重置锁定的索引
 
       // 安全检查 - 确保字幕数组结构正确
       const MAX_SUBTITLES = 10000; // 合理的最大值，防止无限循环
@@ -1220,15 +1362,37 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
         // 安全检查 - 确保跳转时间有效
         if (!isNaN(targetTime) && targetTime >= 0 && targetTime < videoRef.current.duration) {
           console.log(`[DEBUG] 跳转到下一个字幕: #${targetIndex}, 时间: ${targetTime}秒`);
+          
+          // 更新当前字幕索引，在跳转前手动设置
+          setCurrentSubtitleIndex(targetIndex);
+          
+          // 跳转到目标字幕时间
           seekToTime(targetTime);
         } else {
           console.warn(`[WARN] 字幕跳转时间无效: ${targetTime}`);
         }
       }
 
-      setIsLoopingSubtitle(true);
+      // 重新启用循环（如果之前是启用的）
+      // 但要使用新的字幕索引作为循环目标
+      if (wasLooping) {
+        // 短暂延迟后再启用循环，确保字幕索引已正确更新
+        setTimeout(() => {
+          // 为新字幕设置循环
+          setCurrentLoopingSubtitleIndex(targetIndex);
+          setIsLoopingSubtitle(true);
+          
+          // 重置循环计数为0，因为切换到了新字幕
+          setSubtitleLoopCount(0);
+          
+          // 重置播放速度为正常
+          if (videoRef.current) {
+            videoRef.current.playbackRate = 1.0;
+          }
+        }, 100);
+      }
+      
       video.play();
-
     } catch (err) {
       console.error('[ERROR] 切换到下一个字幕失败:', err);
     }
@@ -1532,8 +1696,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           e.preventDefault(); // 阻止默认行为（例如，在浏览器中打开新窗口）
           console.log('[DEBUG] 检测到快捷键: Ctrl+N, 跳转到下一个字幕');
           
+          // 直接调用按钮对应的函数，该函数已正确处理循环状态
           goToNextSubtitle();
-          
         }
         
         // Ctrl+B: 上一个字幕
@@ -1541,7 +1705,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
           e.preventDefault(); // 阻止默认行为
           console.log('[DEBUG] 检测到快捷键: Ctrl+B, 跳转到上一个字幕');
           
-           goToPreviousSubtitle();
+          // 直接调用按钮对应的函数，该函数已正确处理循环状态
+          goToPreviousSubtitle();
         }
       } catch (err) {
         console.error('[ERROR] 键盘快捷键处理失败:', err);
@@ -1555,7 +1720,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [parsedSubtitles, currentSubtitleIndex]); // 添加currentSubtitleIndex作为依赖
+  }, [parsedSubtitles, currentSubtitleIndex, isLoopingSubtitle, currentLoopingSubtitleIndex, subtitleLoopCount]); // 添加所有循环相关状态作为依赖
 
   return (
     <div className="flex-1 bg-white rounded-lg shadow-sm p-3 flex flex-col min-h-0">
@@ -1770,6 +1935,8 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent }) {
               </div>
             )}
           </div>
+          {/* nt.mp3音效 */}
+          <audio ref={audioRef} src={ntMp3} preload="auto" hidden />
         </>
       ) : (
         <div className="flex-1 flex items-center justify-center">
