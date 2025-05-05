@@ -486,12 +486,12 @@ function SubtitleDisplay({ subtitleContent, currentTime, isFullscreen = false, i
         willChange: isDragging ? 'transform' : 'auto',
         cursor: isDragging ? 'grabbing' : 'grab',
         // 使用简单的透明度替代可能引起GPU问题的模糊效果
-        opacity: blurEnabled ? 0.5 : 1,
+        opacity: blurEnabled ? 1 : 1,
         transition: isDragging ? 'none' : 'transform 0.1s ease-out',
         touchAction: 'none',  // 禁用触摸事件默认行为
-        pointerEvents: 'auto', // 确保可以接收指针事件
+        pointerEvents: 'auto !important', // 确保字幕文本本身可以接收指针事件
         position: 'relative', // 确保定位正确
-        zIndex: 9999 // 确保在视频控件之上
+        zIndex: 9999999 // 确保在视频控件之上
       };
       
       // 使用更安全的条件检查
@@ -514,7 +514,7 @@ function SubtitleDisplay({ subtitleContent, currentTime, isFullscreen = false, i
         pointerEvents: 'auto',
         cursor: 'grab',
         touchAction: 'none',
-        zIndex: 9999
+        zIndex: 9999999
       };
     }
   };
@@ -529,7 +529,7 @@ function SubtitleDisplay({ subtitleContent, currentTime, isFullscreen = false, i
       className="subtitle-wrapper" 
       style={{ 
         pointerEvents: 'auto',
-        zIndex: 9999,
+        zIndex: 9999999,
         position: 'relative'
       }}
       onClick={(e) => debugLog('字幕容器点击', { target: e.target.className })}

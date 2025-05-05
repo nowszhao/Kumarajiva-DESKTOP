@@ -816,7 +816,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent, onUpdateP
                     
                     {/* Video embedded subtitle layer - absolutely positioned above video */}
                     {subtitleContent && currentTime > 0 && !isFullscreen && (
-                      <div className="inner-subtitle-overlay" style={{ pointerEvents: 'auto' }}>
+                      <div className="inner-subtitle-overlay" style={{ pointerEvents: 'none' }}>
                         <SubtitleDisplay 
                           subtitleContent={subtitleContent}
                           currentTime={currentTime}
@@ -837,7 +837,7 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent, onUpdateP
                   style={{
                     opacity: isFullscreen ? 1 : 0,
                     visibility: isFullscreen ? 'visible' : 'hidden',
-                    pointerEvents: isFullscreen ? 'auto' : 'none',
+                    pointerEvents: isFullscreen ? 'none' : 'none',
                     zIndex: isFullscreen ? 2147483647 : 'auto'
                   }}
                 >
