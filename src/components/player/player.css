@@ -28,7 +28,7 @@
 /* Subtitle overlay styles */
 .inner-subtitle-overlay {
   position: absolute;
-  bottom: 60px;
+  bottom: 40px;
   left: 0;
   right: 0;
   z-index: 10;
@@ -38,7 +38,7 @@
 
 .external-subtitle-overlay {
   position: fixed;
-  bottom: 60px;
+  bottom: 40px;
   left: 0;
   right: 0;
   z-index: 100;
@@ -132,7 +132,7 @@
 :fullscreen .external-subtitle-overlay,
 :-webkit-full-screen .external-subtitle-overlay,
 :-moz-full-screen .external-subtitle-overlay {
-  bottom: 80px !important;
+  bottom: 60px !important;
   pointer-events: auto !important;
   z-index: 2147483647 !important;
   visibility: visible !important;

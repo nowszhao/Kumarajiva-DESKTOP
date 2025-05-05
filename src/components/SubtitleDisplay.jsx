@@ -30,8 +30,10 @@ const useDraggable = (ref, isFullscreen) => {
     } catch (e) {
       errorLog('读取字幕位置出错:', e);
     }
-    debugLog('使用默认位置 {x: 0, y: 0}');
-    return { x: 0, y: 0 }; // 默认位置
+    // 使用默认位置：水平居中，垂直靠近底部
+    const defaultY = isFullscreen ? 0 : 0; // 保持默认位置不变，CSS已经设置了底部位置
+    debugLog(`使用默认位置 {x: 0, y: ${defaultY}}`);
+    return { x: 0, y: defaultY }; // 默认位置
   }, [isFullscreen]);
 
   const [position, setPosition] = useState(getSavedPosition());
@@ -305,21 +307,32 @@ const useDraggable = (ref, isFullscreen) => {
     if (!element) return;
     
     const handleDoubleClick = (e) => {
-      debugLog('双击字幕，重置位置');
-      e.preventDefault();
+      debugLog('双击事件', {
+        target: e.target.className,
+        isDragHandle: e.target.classList.contains('drag-handle')
+      });
       
-      // 重置位置
+      // 忽略非字幕区域的点击
+      if (!element.contains(e.target)) {
+        debugLog('点击目标不是字幕或其子元素，忽略');
+        return;
+      }
+      
+      // 恢复到默认位置（正中间）
       setPosition({ x: 0, y: 0 });
       savePosition({ x: 0, y: 0 });
-      
-      // 立即更新DOM，提供即时反馈
-      element.style.transform = 'translate(-50%, 0)';
       
       // 添加视觉反馈
       element.classList.add('reset-position');
       setTimeout(() => {
         element.classList.remove('reset-position');
       }, 300);
+      
+      debugLog('位置已重置');
+      
+      // 防止事件冒泡和默认行为
+      e.preventDefault();
+      e.stopPropagation();
     };
     
     element.addEventListener('dblclick', handleDoubleClick);

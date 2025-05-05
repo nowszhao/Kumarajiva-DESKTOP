@@ -562,11 +562,12 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent, onUpdateP
   // Store subtitle controller functions in refs to use in event handlers
   const goToNextSubtitleRef = useRef(subtitleController.goToNextSubtitle);
   const goToPreviousSubtitleRef = useRef(subtitleController.goToPreviousSubtitle);
-  
+  const toggleSubtitleLoopRef = useRef(subtitleController.toggleSubtitleLoop);
   // Update refs when the controller functions change
   useEffect(() => {
     goToNextSubtitleRef.current = subtitleController.goToNextSubtitle;
     goToPreviousSubtitleRef.current = subtitleController.goToPreviousSubtitle;
+    toggleSubtitleLoopRef.current = subtitleController.toggleSubtitleLoop;
   }, [subtitleController]);
 
   // Add keyboard shortcut support
@@ -599,6 +600,17 @@ function PlayerPanel({ currentVideo, currentSubtitle, subtitleContent, onUpdateP
             goToPreviousSubtitleRef.current();
           }
         }
+
+        if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+          e.preventDefault(); // Prevent default behavior
+          console.log('[DEBUG] Keyboard shortcut detected: Ctrl+K, toggle loop subtitle');
+          
+          // Use the stored function reference instead of creating a new SubtitleController
+          if (toggleSubtitleLoopRef.current) {
+            toggleSubtitleLoopRef.current();
+          }        
+        }
+
       } catch (err) {
         console.error('[ERROR] Keyboard shortcut handling failed:', err);
       }

@@ -24,7 +24,7 @@
   user-select: none;
   z-index: 2147483647 !important;
   position: absolute;
-  bottom: 10%;
+  bottom: 5%;
   left: 50%;
   transform: translateX(-50%);
   transition: transform 0.1s ease-out, filter 0.3s ease, box-shadow 0.2s ease;
@@ -128,7 +128,7 @@
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 10%;
+  bottom: 5%;
   width: 100%;
   text-align: center;
   z-index: 2147483647 !important;
